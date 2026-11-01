@@ -3,7 +3,9 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]; DB=ROOT/".estado"/"security"/"faces.dpapi"; MODEL="buffalo_l"
 def _enc(data):
     import win32crypt
-    return win32crypt.CryptProtectData(data,"JARVIS face database",None,None,None,0)[1]
+    # CryptProtectData returns encrypted bytes directly; unlike UnprotectData,
+    # it does not return a (description, data) tuple.
+    return win32crypt.CryptProtectData(data,"JARVIS face database",None,None,None,0)
 def _dec(data):
     import win32crypt
     return win32crypt.CryptUnprotectData(data,None,None,None,0)[1]
