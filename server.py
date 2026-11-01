@@ -1332,8 +1332,7 @@ def main():
 
     signal.signal(signal.SIGTERM, encerrar)
     threading.Thread(target=aquecer, daemon=True).start()
-    if CFG.get("wake_music_path"):
-        threading.Thread(target=tocar_musica_ao_iniciar, daemon=True).start()
+    threading.Thread(target=tocar_musica_ao_iniciar, daemon=True).start()
     if "--sem-abrir" not in sys.argv:
         webbrowser.open(url)
     try:
