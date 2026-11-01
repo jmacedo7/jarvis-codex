@@ -775,6 +775,15 @@ def pediu_confirmacao(resposta):
 
 # ------------------------------------------------------------------ resposta falada
 
+def limpar_para_tela(texto):
+    texto = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", str(texto))
+    texto = re.sub(r"https?://\S+", "", texto)
+    texto = re.sub(r"(?m)^\s*#{1,6}\s*", "", texto)
+    texto = re.sub(r"(?m)^\s*[-*]\s*", "• ", texto)
+    texto = re.sub(r"[*_`]", "", texto)
+    return texto.strip()[:10000]
+
+
 def limpar_para_fala(texto):
     texto = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", texto)  # [link](url) -> link
     texto = re.sub(r"https?://\S+", "", texto)
@@ -1030,7 +1039,13 @@ def processar(audio=None, mime="audio/webm", texto=None):
             registro["interrompido"] = True
             return
         registro["ferramentas"] = SESSAO.ferramentas_turno
-        resposta = limpar_para_fala(r.get("result") or "") or "Feito."
+        resultado_bruto = str(r.get("result") or "") or "Feito."
+        texto_tela = limpar_para_tela(resultado_bruto)
+        resposta = limpar_para_fala(resultado_bruto) or "Feito."
+        if eh_comando_fim_dia(texto):
+            resumo = re.search(r"(?:resumo falado|para ouvir|vers[aã]o falada)\s*:?\s*(.*)$", resultado_bruto, re.I | re.S)
+            if resumo and resumo.group(1).strip():
+                resposta = limpar_para_fala(resumo.group(1))[:900]
         if r.get("is_error"):
             registro["erro"] = r.get("result")
         Turno.aguardando_confirmacao = pediu_confirmacao(resposta)
@@ -1039,7 +1054,7 @@ def processar(audio=None, mime="audio/webm", texto=None):
         registro["resposta"] = resposta
         registro["total_s"] = round(time.time() - inicio, 2)
         EVENTOS.emitir({
-            "tipo": "resposta", "texto": resposta, "audio": audio_url,
+            "tipo": "resposta", "texto": texto_tela, "fala": resposta, "audio": audio_url,
             "segundos": registro["total_s"], "confirmar": Turno.aguardando_confirmacao,
         })
         EVENTOS.emitir({"tipo": "estado", "estado": "parado"})
