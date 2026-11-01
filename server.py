@@ -149,10 +149,13 @@ class Eventos:
         self.ouvintes = []
         self.lock = threading.Lock()
         self.ultimo_estado = {"tipo": "estado", "estado": "iniciando"}
+        self.ultimo_face_status = {"tipo": "face_status", "status": "starting", "name": None, "similarity": None}
 
     def emitir(self, evento):
         if evento.get("tipo") == "estado":
             self.ultimo_estado = evento
+        elif evento.get("tipo") == "face_status":
+            self.ultimo_face_status = evento
         with self.lock:
             for q in list(self.ouvintes):
                 q.put(evento)
@@ -162,6 +165,7 @@ class Eventos:
         with self.lock:
             self.ouvintes.append(q)
         q.put(self.ultimo_estado)
+        q.put(self.ultimo_face_status)
         return q
 
     def sair(self, q):
