@@ -113,10 +113,24 @@ AMOSTRA = "Às suas ordens, Senhor. É assim que eu vou falar com o senhor daqui
 
 
 def persona():
-    for nome in (CFG.get("persona") or "persona.md", "persona.md", "persona.example.md"):
-        p = RAIZ / nome
-        if p.exists():
-            return p.read_text(encoding="utf-8")
+    """Carrega a personalidade do vault do Obsidian ou, como fallback, do projeto."""
+    configurado = Path(CFG.get("persona") or "JARVIS/persona.md").expanduser()
+    candidatos = [configurado] if configurado.is_absolute() else [
+        CFG["pasta"] / configurado,
+        RAIZ / configurado,
+    ]
+    candidatos.extend([RAIZ / "persona.md", RAIZ / "persona.example.md"])
+    vistos = set()
+    for arquivo in candidatos:
+        try:
+            resolvido = arquivo.resolve()
+            if resolvido in vistos:
+                continue
+            vistos.add(resolvido)
+            if resolvido.is_file():
+                return resolvido.read_text(encoding="utf-8")
+        except OSError:
+            continue
     return ""
 
 

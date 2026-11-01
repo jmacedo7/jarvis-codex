@@ -103,9 +103,28 @@ O servidor inicia `codex app-server --listen stdio://` e conversa com ele por JS
 
 ## Proteção e aprovações
 
-O JARVIS usa o sandbox `workspaceWrite` e limita a raiz gravável à pasta definida em JARVIS_PASTA. A rede fica desativada por padrão. A política `onRequest` deixa o Codex pedir autorização quando uma operação exige permissão adicional.
+O JARVIS usa o sandbox `workspaceWrite` e limita a raiz gravável à pasta definida em JARVIS_PASTA. A rede fica desativada por padrão. A política `on-request` deixa o Codex pedir autorização quando uma operação exige permissão adicional.
 
 O hook opcional `hooks/trava.py` reforça a proteção de ações classificadas como sensíveis. A configuração está em `.codex/hooks.json`. Na primeira utilização, abra o Codex na pasta do projeto, use `/hooks` e revise/confie no hook do JARVIS antes de permitir sua execução. Hooks de projeto não devem ser confiados sem revisão. A trava é uma camada adicional, não substitui o sandbox do Codex nem a revisão do que será executado.
+
+## Memória pelo Obsidian
+
+O vault do Obsidian é uma pasta local de arquivos Markdown. Configure `JARVIS_PASTA` com o caminho completo do vault e `JARVIS_PERSONA=JARVIS/persona.md`. O JARVIS carrega a persona diretamente do vault; o Codex usa a mesma pasta como diretório de trabalho e pode consultar as notas relevantes.
+
+Copie o conteúdo da pasta `obsidian/` deste repositório para a raiz do seu vault, mantendo a estrutura:
+
+~~~
+SeuVault/
+  AGENTS.md
+  JARVIS/
+    persona.md
+    Perfil.md
+    Preferencias.md
+    Projetos.md
+    Memoria.md
+~~~
+
+`AGENTS.md` funciona como mapa de leitura: orienta o Codex a consultar apenas as notas relevantes e a não gravar segredos. Edite os arquivos pelo próprio Obsidian. O JARVIS não varre nem indexa todo o vault automaticamente; ele consulta arquivos quando a tarefa pede.
 
 ## Voz e transcrição
 
@@ -113,7 +132,7 @@ Sem ELEVENLABS_API_KEY, o JARVIS continua funcionando na tela, sem resposta fala
 
 Com a chave, o ElevenLabs gera a fala e também pode transcrever áudio. Para transcrição local, configure Whisper e WHISPER_URL; o modo auto tenta o Whisper primeiro e usa ElevenLabs como alternativa.
 
-A lista de vozes continua em `vozes.json`. As preferências escolhidas na engrenagem ficam salvas em `.estado/preferencias.json`.
+Crie uma chave em Developers → API Keys no painel ElevenLabs e habilite Text to Speech; habilite Speech to Text também caso vá usar o microfone com `JARVIS_TRANSCRICAO=elevenlabs`. Coloque a chave somente no `.env`, em `ELEVENLABS_API_KEY`, nunca no Obsidian, no GitHub ou no chat. Defina `JARVIS_VOZ` com o ID de uma voz disponível na sua conta e `JARVIS_MODELO_VOZ=eleven_multilingual_v2`. A lista de vozes mostrada na engrenagem continua em `vozes.json`; as preferências escolhidas na engrenagem ficam salvas em `.estado/preferencias.json`.
 
 ## Atalhos e pré-busca
 
