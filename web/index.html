@@ -152,7 +152,7 @@
     .topo .atalhos { display: none; }
   }
 </style>
-</head>
+  <link rel="stylesheet" href="/dashboard.css?v=1">\n</head>
 <body data-estado="iniciando">
 <canvas id="esfera" aria-label="Esfera do JARVIS. Segure a barra de espaço para falar."></canvas>
 
@@ -732,5 +732,33 @@
   document.addEventListener("visibilitychange", () => { if (document.hidden) pararGravacao(); });
 })();
 </script>
-</body>
+
+<section id="jarvis-dashboard" aria-live="polite">
+  <div class="dash-head">
+    <div class="dash-greeting"><small>Protocolo de boas-vindas</small>Bom ter você de volta, Senhor.</div>
+    <div class="dash-clock"><span id="dash-time">--:--</span><small id="dash-date">Sincronizando horário</small></div>
+  </div>
+  <div class="dash-grid">
+    <article class="dash-card"><div class="dash-card-head"><b>✉</b> E-mails prioritários</div><div class="dash-card-main" id="dash-email">Carregando…</div><div class="dash-card-note">Conecte uma conta para exibir mensagens importantes.</div></article>
+    <article class="dash-card"><div class="dash-card-head"><b>▣</b> Notificações móveis <span id="dash-notification-count"></span></div><div class="dash-card-main" id="dash-notifications-empty">Aguardando notificações do celular.</div><div class="dash-notifications" id="dash-notifications"></div></article>
+    <article class="dash-card"><div class="dash-card-head"><b>◷</b> Agenda e eventos</div><div class="dash-card-main" id="dash-events">Carregando…</div><div class="dash-card-note">Eventos aparecerão aqui quando a agenda estiver conectada.</div></article>
+    <article class="dash-card"><div class="dash-card-head"><b>☼</b> Clima</div><div class="dash-card-main" id="dash-weather">Carregando…</div><div class="dash-card-note">Nenhuma localização foi consultada automaticamente.</div></article>
+  </div>
+</section>
+<div id="jarvis-boot" role="dialog" aria-modal="true" aria-label="Verificação de identidade">
+  <div class="boot-wrap">
+    <div class="boot-brand">J.A.R.V.I.S. · Sistema de acesso</div>
+    <div class="scan-shell">
+      <svg viewBox="0 0 220 220" aria-hidden="true"><circle class="scan-track" cx="110" cy="110" r="100"/><circle id="scan-progress" class="scan-progress" cx="110" cy="110" r="100"/></svg>
+      <div class="scan-core"><div class="scan-sweep"></div><div class="scan-icon">⌁</div></div>
+    </div>
+    <h1 class="boot-title">Bem-vindo ao JARVIS</h1>
+    <div id="boot-sub" class="boot-sub">Inicializando os módulos de segurança. O acesso por voz e teclado ficará bloqueado até a confirmação facial.</div>
+    <div id="boot-status" class="boot-status">Iniciando reconhecimento facial</div>
+    <div class="boot-meter"><span id="boot-meter-fill"></span></div>
+    <div class="boot-foot">Biometria local · Nenhuma imagem enviada</div>
+  </div>
+</div>
+<div id="jarvis-toasts" aria-live="polite"></div>
+\n<script src="/dashboard.js?v=1"></script>\n</body>
 </html>
