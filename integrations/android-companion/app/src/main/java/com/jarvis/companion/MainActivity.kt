@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.text.InputType
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -15,7 +16,7 @@ class MainActivity:Activity(){
   root.addView(TextView(this).apply{text="JARVIS Companion";textSize=26f})
   root.addView(TextView(this).apply{text="Notificações filtradas localmente e criptografadas antes do envio.";textSize=15f;setPadding(0,18,0,24)})
   val topic=EditText(this).apply{hint="Tópico de entrada (ntfy)";setText(SecretStore.get(this@MainActivity,"topic")?:"")}
-  val secret=EditText(this).apply{hint="Segredo de pareamento";setText(SecretStore.get(this@MainActivity,"secret")?:"")}
+  val secret=EditText(this).apply{hint="Segredo de pareamento";inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD;setText(SecretStore.get(this@MainActivity,"secret")?:"")}
   val status=TextView(this).apply{text="Salve o pareamento e conceda acesso às notificações."}
   root.addView(topic);root.addView(secret)
   root.addView(Button(this).apply{text="Salvar pareamento";setOnClickListener{
