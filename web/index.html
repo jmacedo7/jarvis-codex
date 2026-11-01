@@ -700,6 +700,7 @@
   const digitando = () => corpo.classList.contains("digitando");
 
   addEventListener("keydown", (e) => {
+    if (!document.body.classList.contains("jarvis-authenticated")) { if (e.code === "Space") e.preventDefault(); return; }
     if (configAberta()) {  // com as configurações abertas, o espaço não grava
       if (e.key === "Escape") fecharConfig();
       return;
@@ -714,7 +715,7 @@
     if (k === "h") corpo.classList.toggle("detalhes");
     if (k === "n") { novoTurno(); fetch("/api/reiniciar", { method: "POST" }); avisar("Conversa nova."); }
   });
-  addEventListener("keyup", (e) => { if (e.code === "Space" && !digitando() && !configAberta()) { e.preventDefault(); pararGravacao(); } });
+  addEventListener("keyup", (e) => { if (!document.body.classList.contains("jarvis-authenticated")) return; if (e.code === "Space" && !digitando() && !configAberta()) { e.preventDefault(); pararGravacao(); } });
 
   el("entrada").addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
