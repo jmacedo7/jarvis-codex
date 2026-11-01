@@ -835,7 +835,10 @@ class Fala:
                         self.cond.notify_all()
         except urllib.error.HTTPError as erro:
             self.erro = erro.code
-            log({"evento": "voz_falhou", "codigo": erro.code, "detalhe": erro.read()[:300].decode("utf-8", "ignore")})
+            detalhe = erro.read()[:300].decode("utf-8", "ignore")
+            log({"evento": "voz_falhou", "codigo": erro.code, "detalhe": detalhe})
+            if erro.code == 401:
+                EVENTOS.emitir({"tipo": "aviso", "texto": "ElevenLabs recusou a chave (HTTP 401). Estou tentando usar a voz local do navegador; atualize ELEVENLABS_API_KEY para recuperar a voz premium."})
         except Exception as erro:
             self.erro = repr(erro)
             log({"evento": "voz_falhou", "detalhe": repr(erro)})
@@ -1061,7 +1064,11 @@ def processar(audio=None, mime="audio/webm", texto=None):
         EVENTOS.emitir({"tipo": "estado", "estado": "parado"})
     except Exception as erro:
         registro["erro"] = repr(erro)
-        EVENTOS.emitir({"tipo": "aviso", "texto": f"Deu erro: {erro}"})
+        if isinstance(erro, urllib.error.HTTPError) and erro.code == 401:
+            mensagem = "A autenticação do ElevenLabs falhou (HTTP 401). Confira a chave ELEVENLABS_API_KEY no .env; não compartilhe essa chave. Se a falha foi na transcrição, use Whisper local ou corrija a chave."
+        else:
+            mensagem = f"Deu erro: {erro}"
+        EVENTOS.emitir({"tipo": "aviso", "texto": mensagem})
         EVENTOS.emitir({"tipo": "estado", "estado": "parado"})
     finally:
         if token.exists():
