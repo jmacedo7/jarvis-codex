@@ -50,7 +50,8 @@
   .chip.feito i { animation: none; opacity: .4; }
   .voce { font-size: 17px; color: var(--suave); min-height: 24px; margin-bottom: 14px; font-weight: 400; }
   .resposta {
-    font-size: clamp(21px, 2.5vw, 31px); line-height: 1.38; font-weight: 500; min-height: 44px; text-wrap: balance;
+    font-size: clamp(18px, 2vw, 27px); line-height: 1.5; font-weight: 500; min-height: 44px;
+    white-space: pre-wrap; text-wrap: pretty; max-height: 36vh; overflow-y: auto; padding: 0 8px;
   }
   .tempo { margin-top: 14px; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--fraco); min-height: 14px; }
   .aviso { margin-top: 10px; font-size: 14px; color: var(--suave); min-height: 18px; }
@@ -599,7 +600,7 @@
         document.querySelectorAll(".chip").forEach((c) => c.classList.add("feito"));
         el("resposta").textContent = e.texto;
         el("tempo").textContent = "respondeu em " + String(e.segundos).replace(".", ",") + " s";
-        falar(e.audio, e.texto);
+        falar(e.audio, e.fala || e.texto);
       } else if (e.tipo === "face_status") {
         atualizarReconhecimento(e);
       } else if (e.tipo === "aviso") {
