@@ -28,8 +28,13 @@ class MobileBridge:
             headers={"Content-Type":"text/plain; charset=utf-8","Title":title,"Priority":priority,"Cache":"no"})
         with urllib.request.urlopen(req,timeout=15) as response: return 200 <= response.status < 300
     def alert_unknown(self, when=None):
-        return self.publish(self.alerts,{"kind":"security_alert","event":"unknown_person","time":when or int(time.time()),"device":"JARVIS-PC"},
-            "JARVIS • Pessoa não reconhecida","high")
+        # Generic plaintext alert: no photo, name, face template, or personal details.
+        body=("O JARVIS detectou uma pessoa não reconhecida. Horário: "+
+              time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(when or time.time())))
+        req=urllib.request.Request(self.server+"/"+urllib.parse.quote(self.alerts,safe=""),
+            data=body.encode("utf-8"),method="POST",
+            headers={"Content-Type":"text/plain; charset=utf-8","Title":"JARVIS • Pessoa não reconhecida","Priority":"high","Cache":"no"})
+        with urllib.request.urlopen(req,timeout=15) as response: return 200 <= response.status < 300
     def _save_notification(self,payload):
         self.state_dir.mkdir(parents=True,exist_ok=True); path=self.state_dir/"mobile_notifications.jsonl"
         record={"received_at":int(time.time()),"app":str(payload.get("app",""))[:100],"title":str(payload.get("title",""))[:200],
