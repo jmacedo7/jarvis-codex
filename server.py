@@ -1082,6 +1082,58 @@ def processar(audio=None, mime="audio/webm", texto=None):
         Turno.ocupado.release()
 
 
+def diagnostico_config():
+    """Mostra de onde vêm as configurações sem revelar nenhum segredo."""
+    global_env = Path("~/.config/vortex-marketing/.env").expanduser()
+    project_env = RAIZ / ".env"
+    keys = ("ELEVENLABS_API_KEY", "JARVIS_PORTA", "JARVIS_FACE_ENABLED",
+            "JARVIS_NTFY_INBOX", "JARVIS_NTFY_ALERTS", "JARVIS_MOBILE_SECRET")
+    fontes = {}
+    env_os = os.environ
+    global_values = ler_env(global_env)
+    project_values = ler_env(project_env)
+    for key in keys:
+        if key in env_os:
+            fontes[key] = "variável de ambiente do Windows"
+        elif key in project_values:
+            fontes[key] = "arquivo .env do projeto"
+        elif key in global_values:
+            fontes[key] = "arquivo global ~/.config/vortex-marketing/.env"
+        else:
+            fontes[key] = "padrão / não configurado"
+    return {
+        "arquivo_ativo": str(project_env),
+        "arquivo_ativo_existe": project_env.is_file(),
+        "modelo_exemplo": str(RAIZ / ".env.example"),
+        "modelo_exemplo_e_carregado": False,
+        "arquivo_global": str(global_env),
+        "arquivo_global_existe": global_env.is_file(),
+        "fontes": fontes,
+        "ambiente_python": sys.executable,
+    }
+
+
+def notificacoes_painel():
+    caminho = ESTADO / "mobile_notifications.jsonl"
+    itens = []
+    try:
+        linhas = caminho.read_text(encoding="utf-8").splitlines()[-30:]
+        for linha in reversed(linhas):
+            try:
+                item = json.loads(linha)
+                itens.append({
+                    "received_at": int(item.get("received_at", 0) or 0),
+                    "app": str(item.get("app", ""))[:100],
+                    "title": str(item.get("title", ""))[:200],
+                    "text": str(item.get("text", ""))[:500],
+                })
+            except (ValueError, TypeError):
+                continue
+    except OSError:
+        pass
+    return itens[:12]
+
+
 def config_atual():
     return {"voz": CFG["voz"], "velocidade": CFG["velocidade_voz"], "vozes": VOZES}
 
@@ -1141,6 +1193,10 @@ class Servidor(BaseHTTPRequestHandler):
         caminho = self.path.split("?")[0]
         if caminho == "/api/eventos":
             return self.eventos()
+        if caminho == "/api/painel":
+            dados = {"notifications": notificacoes_painel(),
+                     "email_connected": False, "calendar_connected": False, "weather_configured": False}
+            return self.responder(200, json.dumps(dados, ensure_ascii=False).encode())
         if caminho == "/api/config":
             return self.responder(200, json.dumps(config_atual(), ensure_ascii=False).encode())
         if caminho.startswith("/api/amostra/"):
@@ -1149,7 +1205,7 @@ class Servidor(BaseHTTPRequestHandler):
             return self.voz(caminho.rsplit("/", 1)[-1])
         if caminho == "/api/saude":
             corpo = json.dumps({"codex": SESSAO.vivo(), "pasta": str(CFG["pasta"]), "modelo": CFG["modelo"],
-                                "telas": len(EVENTOS.ouvintes)})
+                                "telas": len(EVENTOS.ouvintes), "configuracao": diagnostico_config()})
             return self.responder(200, corpo.encode())
         arquivo = (WEB / ("index.html" if caminho == "/" else caminho.lstrip("/"))).resolve()
         if WEB.resolve() not in arquivo.parents and arquivo != WEB.resolve() / "index.html":
