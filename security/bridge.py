@@ -33,7 +33,7 @@ class MobileBridge:
               time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(when or time.time())))
         req=urllib.request.Request(self.server+"/"+urllib.parse.quote(self.alerts,safe=""),
             data=body.encode("utf-8"),method="POST",
-            headers={"Content-Type":"text/plain; charset=utf-8","Title":"JARVIS • Pessoa não reconhecida","Priority":"high","Cache":"no"})
+            headers={"Content-Type":"text/plain; charset=utf-8","Title":"JARVIS - Pessoa nao reconhecida","Priority":"high","Cache":"no"})
         with urllib.request.urlopen(req,timeout=15) as response: return 200 <= response.status < 300
     def _save_notification(self,payload):
         self.state_dir.mkdir(parents=True,exist_ok=True); path=self.state_dir/"mobile_notifications.jsonl"
