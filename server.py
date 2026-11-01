@@ -73,7 +73,7 @@ def carregar_config():
         "transcricao": base.get("JARVIS_TRANSCRICAO", "auto"),
         "whisper_url": base.get("WHISPER_URL", "http://127.0.0.1:8178").rstrip("/"),
         "codex_bin": base.get("JARVIS_CODEX_BIN", "codex"),
-        "aprovacao": base.get("JARVIS_APROVACAO", "onRequest"),
+        "aprovacao": base.get("JARVIS_APROVACAO", "on-request"),
         "rede": base.get("JARVIS_REDE", "0") == "1",
         "aquecer": base.get("JARVIS_AQUECER", "1") == "1",
         "aquecer_atalhos": base.get("JARVIS_AQUECER_ATALHOS", ""),
@@ -365,7 +365,7 @@ class SessaoCodex:
             parametros = {
                 "cwd": str(RAIZ),
                 "approvalPolicy": CFG["aprovacao"],
-                "sandbox": "workspaceWrite",
+                "sandbox": "workspace-write",
             }
             if CFG["modelo"]:
                 parametros["model"] = CFG["modelo"]
@@ -374,7 +374,7 @@ class SessaoCodex:
             if not self.thread_id:
                 raise RuntimeError("O Codex não retornou o identificador da conversa.")
             log({"evento": "codex_init", "modelo": CFG["modelo"] or "padrão",
-                 "thread": self.thread_id, "sandbox": "workspaceWrite",
+                 "thread": self.thread_id, "sandbox": "workspace-write",
                  "aprovacao": CFG["aprovacao"], "plataforma": inicializacao.get("platformOs")})
         except Exception:
             self.parar()

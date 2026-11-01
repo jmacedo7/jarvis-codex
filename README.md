@@ -94,7 +94,7 @@ As opções principais ficam no .env:
 | JARVIS_CODEX_BIN | codex | Executável do Codex CLI |
 | JARVIS_MODELO | vazio | Modelo; vazio usa o padrão da conta |
 | JARVIS_ESFORCO | low | Esforço de raciocínio |
-| JARVIS_APROVACAO | onRequest | Política nativa de aprovação |
+| JARVIS_APROVACAO | on-request | Política nativa de aprovação |
 | JARVIS_REDE | 0 | Permite rede no sandbox quando definido como 1 |
 | JARVIS_CONTEXTO | leve | Profundidade de leitura inicial: enxuta ou completa |
 | JARVIS_PASTA | pasta pessoal | Área de trabalho do usuário |
