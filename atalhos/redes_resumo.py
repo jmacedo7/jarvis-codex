@@ -25,7 +25,7 @@ except ImportError:  # Python < 3.9
     ZoneInfo = None
 
 ZERNIO = Path(os.environ.get(
-    "JARVIS_ZERNIO", "~/.claude/skills/publicar-agendar-posts/materiais/scripts/zernio.py")).expanduser()
+    "JARVIS_ZERNIO", "~/.codex/skills/publicar-agendar-posts/materiais/scripts/zernio.py")).expanduser()
 FUSO = os.environ.get("JARVIS_FUSO", "America/Sao_Paulo")
 POR_PAGINA = 100  # máximo que a Zernio aceita
 

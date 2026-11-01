@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""JARVIS: assistente de voz em cima do Claude Code.
+"""JARVIS: assistente de voz conectado ao Codex App Server.
 
-Você segura a barra de espaço e fala. O áudio vira texto (whisper local ou
-ElevenLabs Scribe), o texto vai pra uma sessão do Claude Code aberta na sua
-pasta de trabalho, e a resposta volta falada pelo ElevenLabs.
+Você segura a barra de espaço e fala. O áudio vira texto (Whisper local ou
+ElevenLabs Scribe), o texto vai para uma conversa persistente do Codex, e a
+resposta volta falada pelo ElevenLabs. A interface HTTP/SSE permanece separada
+do motor de IA.
 
 Só usa a biblioteca padrão do Python (3.9+). Rodar:  python3 server.py
 """
@@ -59,10 +60,10 @@ def carregar_config():
     return {
         "pasta": pasta,
         "porta": int(base.get("JARVIS_PORTA", "8790")),
-        "modelo": base.get("JARVIS_MODELO", "sonnet"),
+        "modelo": base.get("JARVIS_MODELO", ""),
         "esforco": base.get("JARVIS_ESFORCO", "low"),
-        # leve: o Claude abre numa pasta vazia com a sua pasta anexada (responde em ~1 s);
-        # completo: abre direto na sua pasta, carregando o CLAUDE.md e a memória dela (bem mais lento)
+        # leve: mantém o contexto inicial enxuto; completo: usa diretamente a pasta de trabalho.
+        # O Codex recebe o diretório de trabalho em cada turno e respeita AGENTS.md.
         "contexto": base.get("JARVIS_CONTEXTO", "leve"),
         "persona": base.get("JARVIS_PERSONA", "persona.md"),
         "eleven_key": base.get("ELEVENLABS_API_KEY", ""),
@@ -71,7 +72,9 @@ def carregar_config():
         "velocidade_voz": float(base.get("JARVIS_VELOCIDADE_VOZ", "1.0")),
         "transcricao": base.get("JARVIS_TRANSCRICAO", "auto"),
         "whisper_url": base.get("WHISPER_URL", "http://127.0.0.1:8178").rstrip("/"),
-        "bloquear": base.get("JARVIS_BLOQUEAR_FERRAMENTAS", ""),
+        "codex_bin": base.get("JARVIS_CODEX_BIN", "codex"),
+        "aprovacao": base.get("JARVIS_APROVACAO", "onRequest"),
+        "rede": base.get("JARVIS_REDE", "0") == "1",
         "aquecer": base.get("JARVIS_AQUECER", "1") == "1",
         "aquecer_atalhos": base.get("JARVIS_AQUECER_ATALHOS", ""),
     }
@@ -163,9 +166,9 @@ NOMES_SERVIDOR = {
     "geracorte": "GeraCorte",
     "geragrupos": "GeraGrupos",
     "panda-video": "Panda Video",
-    "claude_ai_Google_Calendar": "Agenda",
-    "claude_ai_Gmail": "Gmail",
-    "claude_ai_Google_Drive": "Drive",
+    "google_calendar": "Agenda",
+    "gmail": "Gmail",
+    "google_drive": "Drive",
 }
 
 
@@ -181,7 +184,7 @@ def rotulo_ferramenta(nome, entrada):
         for chave, rot in NOMES_SERVIDOR.items():
             if chave.lower() in servidor.lower():
                 return rot
-        return servidor.replace("claude_ai_", "").replace("_", " ")
+        return re.sub(r"^[a-z0-9]+_ai_", "", servidor, flags=re.I).replace("_", " ")
     if nome == "Bash":
         cmd = entrada.get("command", "")
         if re.search(r"zernio\.py|redes_resumo|isca_resumo", cmd):
@@ -215,17 +218,20 @@ def rotulo_ferramenta(nome, entrada):
     return nome
 
 
-# ------------------------------------------------------------ sessão do Claude
+# ------------------------------------------------------------ sessão do Codex
 
-# Vai junto de cada fala: o modelo tende a se alongar quando acha muita coisa.
-LEMBRETE = ("\n\n[modo voz: pergunta simples (conversa, confirmação, algo que você já sabe) = responda direto, "
-            "sem aviso e sem ferramenta. Só se precisar de ferramenta, comece com uma frase curta de aviso (até 10 palavras). "
-            "Resposta final em no máximo 2 frases curtas, até 30 palavras. Trate-o por Senhor.]")
-ESPERA_AVISO = 0.3  # só fala "um instante" se o trabalho com ferramenta passar disso
+# O App Server mantém uma thread viva e transmite eventos JSONL pelo stdio.
+# A interface HTTP/SSE e todos os recursos de áudio continuam no server.py.
+
+LEMBRETE = ("\n\n[modo JARVIS: seja direto, preciso e natural em português do Brasil. "
+            "Perguntas simples devem ser respondidas sem ferramentas. Se precisar trabalhar, "
+            "avise em uma frase curta antes de agir. Resposta falada: no máximo 2 frases curtas, "
+            "até 30 palavras. Trate o dono por Senhor.]")
+ESPERA_AVISO = 0.3
 
 
-class TurnoClaude:
-    """Uma pergunta em andamento: recebe o aviso rápido e a resposta final."""
+class TurnoCodex:
+    """Uma solicitação ativa no Codex App Server."""
 
     def __init__(self, ao_avisar=None):
         self.fila = queue.Queue()
@@ -234,7 +240,7 @@ class TurnoClaude:
         self.ao_avisar = ao_avisar
         self.agendado = False
         self.trava = threading.Lock()
-        self.marcas = {"envio": time.time()}  # tempos de cada etapa, pro log
+        self.marcas = {"envio": time.time()}
 
     def marcar(self, nome):
         self.marcas.setdefault(nome, round(time.time() - self.marcas["envio"], 2))
@@ -245,7 +251,6 @@ class TurnoClaude:
             self.fila.put(resultado)
 
     def avisar(self, frase=None):
-        """Fala o aviso rápido uma vez só por pergunta (o primeiro gatilho que chegar)."""
         with self.trava:
             if self.avisou or self.entregue or not self.ao_avisar:
                 return
@@ -253,7 +258,6 @@ class TurnoClaude:
         self.ao_avisar(frase)
 
     def pedir_aviso(self, frase=None):
-        """Ele começou a usar ferramenta: se a resposta não sair em ESPERA_AVISO s, avisa."""
         with self.trava:
             if self.avisou or self.agendado:
                 return
@@ -263,177 +267,378 @@ class TurnoClaude:
         relogio.start()
 
 
-class SessaoClaude:
-    """Um processo do Claude Code que fica aberto e recebe uma fala por vez."""
+class SessaoCodex:
+    """Cliente JSON-RPC do Codex App Server via stdin/stdout."""
 
     def __init__(self):
         self.proc = None
         self.lock = threading.Lock()
+        self.escrita_lock = threading.Lock()
+        self.rpc_lock = threading.Lock()
+        self.rpc_pendentes = {}
+        self.proximo_id = 0
         self.turno = None
-        self.livre = threading.Event()  # o Claude fecha a rodada uns segundos depois da resposta
+        self.livre = threading.Event()
         self.livre.set()
         self.ferramentas_turno = []
-
-    def comando(self):
-        claude = shutil.which("claude") or "claude"
-        trava = f'"{sys.executable}" "{RAIZ / "hooks" / "trava.py"}"'
-        ajustes = {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": trava}]}]}}
-        cmd = [
-            claude, "-p",
-            "--input-format", "stream-json",
-            "--output-format", "stream-json",
-            "--verbose",
-            "--include-partial-messages",  # avisa o fim do texto antes de fechar a rodada
-            "--permission-mode", "bypassPermissions",
-            "--settings", json.dumps(ajustes),
-            "--append-system-prompt", persona() + self.nota_pasta(),
-        ]
-        if CFG["contexto"] == "leve":
-            cmd += ["--add-dir", str(CFG["pasta"])]
-        if CFG["modelo"]:
-            cmd += ["--model", CFG["modelo"]]
-        if CFG["esforco"]:
-            cmd += ["--effort", CFG["esforco"]]
-        if CFG["bloquear"]:
-            cmd += ["--disallowedTools", CFG["bloquear"]]
-        return cmd
-
-    def nota_pasta(self):
-        return (f"\n\n## Pasta de trabalho\nA pasta de trabalho dele é `{CFG['pasta']}`. Caminhos relativos citados "
-                "acima ficam dentro dela. Antes de criar ou mudar algo lá, leia o CLAUDE.md dela (só a parte que interessa).")
+        self.thread_id = None
+        self.turn_id = None
+        self.texto_turno = ""
+        self.aprovacoes = []
+        self.aprovacao_lock = threading.Lock()
 
     def pasta_de_abertura(self):
-        if CFG["contexto"] == "leve":
-            leve = RAIZ / "cerebro"  # pasta vazia: o Claude não carrega o CLAUDE.md nem a memória da sua pasta
-            leve.mkdir(exist_ok=True)
-            return str(leve)
-        return str(CFG["pasta"])
+        # O processo começa na raiz do JARVIS para carregar a configuração dos hooks.
+        return RAIZ
 
-    def interromper(self):
-        """Barra de espaço no meio do trabalho: o Claude para na hora e a conversa continua."""
-        turno = self.turno
-        if not self.vivo() or not turno or turno.entregue:
-            return False
-        try:
-            msg = {"type": "control_request", "request_id": uuid.uuid4().hex[:8], "request": {"subtype": "interrupt"}}
-            self.proc.stdin.write(json.dumps(msg) + "\n")
+    def comando(self):
+        executavel = CFG.get("codex_bin") or "codex"
+        encontrado = shutil.which(executavel) or shutil.which(executavel + ".cmd")
+        executavel = encontrado or executavel
+        args = [executavel, "app-server", "--listen", "stdio://"]
+        if os.name == "nt" and str(executavel).lower().endswith((".cmd", ".bat")):
+            linha = subprocess.list2cmdline(args)
+            return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", linha]
+        return args
+
+    def _enviar(self, mensagem):
+        if not self.vivo():
+            raise RuntimeError("O processo do Codex não está em execução.")
+        with self.escrita_lock:
+            self.proc.stdin.write(json.dumps(mensagem, ensure_ascii=False) + "\n")
             self.proc.stdin.flush()
-        except (BrokenPipeError, OSError):
-            pass
-        turno.entregar({"result": "", "interrompido": True})
-        return True
+
+    def _rpc(self, metodo, parametros=None, limite=25):
+        with self.rpc_lock:
+            self.proximo_id += 1
+            rid = self.proximo_id
+            slot = {"evento": threading.Event()}
+            self.rpc_pendentes[rid] = slot
+        mensagem = {"id": rid, "method": metodo, "params": parametros or {}}
+        try:
+            self._enviar(mensagem)
+        except Exception:
+            with self.rpc_lock:
+                self.rpc_pendentes.pop(rid, None)
+            raise
+        if not slot["evento"].wait(limite):
+            with self.rpc_lock:
+                self.rpc_pendentes.pop(rid, None)
+            raise TimeoutError(f"O Codex não respondeu ao método {metodo}.")
+        if slot.get("erro"):
+            raise RuntimeError(slot["erro"].get("message", str(slot["erro"])))
+        return slot.get("resultado") or {}
 
     def iniciar(self):
+        if self.vivo():
+            return
         ESTADO.mkdir(exist_ok=True)
         env = os.environ.copy()
         env["JARVIS_ESTADO"] = str(ESTADO)
         env["JARVIS_PASTA"] = str(CFG["pasta"])
+        env["JARVIS_ROOT"] = str(RAIZ)
         self.livre.set()
+        self.thread_id = None
+        self.turn_id = None
+        self.texto_turno = ""
+        self.aprovacoes = []
+        self.rpc_pendentes = {}
+
         self.proc = subprocess.Popen(
-            self.comando(), cwd=self.pasta_de_abertura(), env=env,
+            self.comando(), cwd=str(self.pasta_de_abertura()), env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1, encoding="utf-8",
         )
         threading.Thread(target=self._ler_saida, args=(self.proc,), daemon=True).start()
         threading.Thread(target=self._ler_erros, args=(self.proc,), daemon=True).start()
 
+        try:
+            inicializacao = self._rpc("initialize", {
+                "clientInfo": {
+                    "name": "jarvis-codex",
+                    "title": "JARVIS",
+                    "version": "1.0.0",
+                }
+            }, limite=30)
+            self._enviar({"method": "initialized", "params": {}})
+
+            parametros = {
+                "cwd": str(RAIZ),
+                "approvalPolicy": CFG["aprovacao"],
+                "sandbox": "workspaceWrite",
+            }
+            if CFG["modelo"]:
+                parametros["model"] = CFG["modelo"]
+            thread = self._rpc("thread/start", parametros, limite=60)
+            self.thread_id = (thread.get("thread") or {}).get("id")
+            if not self.thread_id:
+                raise RuntimeError("O Codex não retornou o identificador da conversa.")
+            log({"evento": "codex_init", "modelo": CFG["modelo"] or "padrão",
+                 "thread": self.thread_id, "sandbox": "workspaceWrite",
+                 "aprovacao": CFG["aprovacao"], "plataforma": inicializacao.get("platformOs")})
+        except Exception:
+            self.parar()
+            raise
+
     def parar(self):
-        if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
+        proc = self.proc
         self.proc = None
+        self.thread_id = None
+        self.turn_id = None
+        self.aprovacoes = []
+        self.livre.set()
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            except OSError:
+                pass
 
     def vivo(self):
         return self.proc is not None and self.proc.poll() is None
 
+    def tem_aprovacao(self):
+        with self.aprovacao_lock:
+            return bool(self.aprovacoes)
+
+    def resolver_aprovacao(self, aprovar):
+        with self.aprovacao_lock:
+            if not self.aprovacoes:
+                return False
+            pendente = self.aprovacoes.pop(0)
+        decisao = "accept" if aprovar else "decline"
+        self._enviar({"id": pendente["id"], "result": {"decision": decisao}})
+        log({"evento": "codex_aprovacao", "decisao": decisao,
+             "metodo": pendente["metodo"],
+             "comando": str(pendente.get("params", {}).get("command", ""))[:200]})
+        return True
+
+    def interromper(self):
+        if not self.vivo() or not self.thread_id or not self.turn_id:
+            return False
+        try:
+            self._enviar({
+                "id": "jarvis-interrupt-" + uuid.uuid4().hex[:8],
+                "method": "turn/interrupt",
+                "params": {"threadId": self.thread_id, "turnId": self.turn_id},
+            })
+            return True
+        except (BrokenPipeError, OSError, RuntimeError):
+            return False
+
+    def _texto_item(self, item):
+        if not isinstance(item, dict):
+            return ""
+        partes = []
+        texto = item.get("text")
+        if isinstance(texto, str):
+            partes.append(texto)
+        for bloco in item.get("content", []) or []:
+            if isinstance(bloco, dict):
+                valor = bloco.get("text") or bloco.get("output_text")
+                if isinstance(valor, str):
+                    partes.append(valor)
+        return "\n".join(p for p in partes if p).strip()
+
+    def _rotular_item(self, item):
+        tipo = item.get("type", "")
+        if tipo == "commandExecution":
+            comando = item.get("command", "")
+            rotulo = rotulo_ferramenta("Bash", {"command": comando})
+            self.ferramentas_turno.append("Bash " + str(comando)[:160])
+            return rotulo or "Terminal"
+        if tipo == "fileChange":
+            self.ferramentas_turno.append("apply_patch")
+            return "Arquivos"
+        if tipo == "mcpToolCall":
+            nome = item.get("tool") or item.get("toolName") or item.get("name") or "MCP"
+            entrada = item.get("arguments") or item.get("input") or {}
+            self.ferramentas_turno.append(str(nome) + " " + json.dumps(entrada, ensure_ascii=False)[:160])
+            return rotulo_ferramenta(str(nome), entrada) or "Conector"
+        if tipo in ("webSearch", "webFetch"):
+            return "Internet"
+        return None
+
+    def _solicitar_aprovacao(self, mensagem):
+        metodo = mensagem.get("method", "")
+        parametros = mensagem.get("params") or {}
+        pendente = {"id": mensagem.get("id"), "metodo": metodo, "params": parametros}
+        with self.aprovacao_lock:
+            self.aprovacoes.append(pendente)
+        if metodo == "item/commandExecution/requestApproval":
+            comando = parametros.get("command") or parametros.get("reason") or "execução de comando"
+            aviso = "O Codex solicita autorização: " + str(comando)[:180] + ". Diga confirma ou cancela."
+        else:
+            aviso = "O Codex solicita aprovação para alterar arquivos. Diga confirma ou cancela."
+        EVENTOS.emitir({"tipo": "aviso", "texto": aviso})
+        if self.turno:
+            self.turno.marcar("aprovacao_s")
+
     def _ler_saida(self, proc):
-        iniciou = False
-        texto_msg = ""  # texto da mensagem que o Claude está escrevendo agora
         for linha in proc.stdout:
             try:
-                e = json.loads(linha)
-            except ValueError:
+                mensagem = json.loads(linha)
+            except (ValueError, TypeError):
                 continue
-            tipo = e.get("type")
-            turno = self.turno
-            if tipo == "system" and e.get("subtype") == "init":
-                # O Claude manda esse aviso a cada pergunta; só o primeiro de cada processo interessa.
-                if not iniciou:
-                    iniciou = True
-                    servidores = [(m.get("name"), m.get("status")) for m in e.get("mcp_servers", [])]
-                    log({"evento": "init", "modelo": e.get("model"), "mcp": servidores,
-                         "ferramentas": len(e.get("tools", []))})
-            elif tipo == "stream_event":
-                ev = e.get("event") or {}
-                if ev.get("type") == "message_start":
-                    texto_msg = ""
-                    if turno:
-                        turno.marcar("1a_mensagem_s")
-                elif ev.get("type") == "message_delta" and (ev.get("delta") or {}).get("stop_reason") == "end_turn":
-                    # Resposta final pronta: entrega já, sem esperar o Claude fechar a rodada.
-                    if turno and texto_msg.strip():
-                        turno.entregar({"result": texto_msg, "cedo": True})
-            elif tipo == "assistant":
-                for bloco in e.get("message", {}).get("content", []) or []:
-                    if bloco.get("type") == "text":
-                        texto_msg = (texto_msg + " " + bloco.get("text", "")).strip()
-                    elif bloco.get("type") == "tool_use":
-                        if turno:
-                            turno.marcar("ferramenta_s")
-                        # Texto escrito antes da primeira ferramenta = aviso rápido ("Um instante, Senhor.").
-                        # Se ele foi direto pra ferramenta, toca uma frase pronta.
-                        if turno:
-                            turno.pedir_aviso(texto_msg or None)
-                        texto_msg = ""
-                        rot = rotulo_ferramenta(bloco.get("name", ""), bloco.get("input"))
-                        resumo = json.dumps(bloco.get("input") or {}, ensure_ascii=False)[:160]
-                        self.ferramentas_turno.append(f"{bloco.get('name')} {resumo}")
-                        if rot:
-                            EVENTOS.emitir({"tipo": "ferramenta", "rotulo": rot})
-            elif tipo == "result":
-                if turno:
-                    turno.entregar(e)
+
+            if "id" in mensagem and "method" not in mensagem:
+                with self.rpc_lock:
+                    slot = self.rpc_pendentes.pop(mensagem.get("id"), None)
+                if slot:
+                    slot["resultado"] = mensagem.get("result")
+                    slot["erro"] = mensagem.get("error")
+                    slot["evento"].set()
+                continue
+
+            metodo = mensagem.get("method", "")
+            parametros = mensagem.get("params") or {}
+
+            if metodo in ("item/commandExecution/requestApproval", "item/fileChange/requestApproval"):
+                self._solicitar_aprovacao(mensagem)
+                continue
+
+            if metodo == "item/agentMessage/delta":
+                delta = parametros.get("delta") or parametros.get("text") or ""
+                if isinstance(delta, str):
+                    self.texto_turno += delta
+                    if self.turno:
+                        self.turno.marcar("1a_mensagem_s")
+                continue
+
+            if metodo == "item/started":
+                item = parametros.get("item") or {}
+                if self.turno and item.get("type") in ("commandExecution", "mcpToolCall", "fileChange"):
+                    self.turno.marcar("ferramenta_s")
+                    self.turno.pedir_aviso()
+                rotulo = self._rotular_item(item)
+                if rotulo:
+                    EVENTOS.emitir({"tipo": "ferramenta", "rotulo": rotulo})
+                continue
+
+            if metodo == "item/completed":
+                item = parametros.get("item") or {}
+                if item.get("type") == "agentMessage" and not self.texto_turno.strip():
+                    self.texto_turno = self._texto_item(item)
+                continue
+
+            if metodo == "turn/completed":
+                turno = parametros.get("turn") or {}
+                status = turno.get("status", "completed")
+                resposta = self.texto_turno.strip() or self._texto_item(turno)
+                if status == "interrupted":
+                    resultado = {"result": "", "interrompido": True}
+                elif status == "failed":
+                    erro = (turno.get("error") or {}).get("message") or "O Codex não conseguiu concluir a solicitação."
+                    resultado = {"result": erro, "is_error": True}
+                else:
+                    resultado = {"result": resposta or "Feito."}
+                if self.turno:
+                    self.turno.entregar(resultado)
+                self.turn_id = None
                 self.livre.set()
+                continue
+
+            if metodo == "error":
+                erro = parametros.get("error") or {}
+                if self.turno:
+                    self.turno.entregar({"result": erro.get("message", "Erro no Codex."), "is_error": True})
+                self.livre.set()
+                continue
+
+            if metodo == "warning":
+                log({"evento": "codex_aviso", "mensagem": parametros.get("message", "")})
+
+        erro = "A sessão do Codex foi encerrada."
+        with self.rpc_lock:
+            pendentes = list(self.rpc_pendentes.values())
+            self.rpc_pendentes.clear()
+        for slot in pendentes:
+            slot["erro"] = {"message": erro}
+            slot["evento"].set()
         if self.turno:
-            self.turno.entregar({"type": "result", "is_error": True, "result": "A sessão do Claude fechou."})
+            self.turno.entregar({"result": erro, "is_error": True})
         self.livre.set()
 
     def _ler_erros(self, proc):
         ESTADO.mkdir(exist_ok=True)
-        with open(ESTADO / "claude-erros.log", "a", encoding="utf-8") as f:
+        with open(ESTADO / "codex-erros.log", "a", encoding="utf-8") as arquivo:
             for linha in proc.stderr:
-                f.write(linha)
-                f.flush()
+                arquivo.write(linha)
+                arquivo.flush()
+
+    def _prompt(self, texto):
+        instrucoes = persona()
+        modo = (
+            "Contexto enxuto: use a pasta de trabalho indicada e leia apenas as instruções AGENTS.md "
+            "ou documentação que forem relevantes para a tarefa."
+            if CFG["contexto"] == "leve"
+            else "Contexto completo: antes de agir, consulte AGENTS.md e as instruções relevantes da pasta de trabalho."
+        )
+        nota = (
+            "\n\n## Pasta de trabalho do usuário\n"
+            "A pasta de trabalho é " + str(CFG["pasta"]) + ". "
+            "Trabalhe nela, usando caminhos absolutos quando necessário. " + modo +
+            "\nNão altere os arquivos do JARVIS, salvo pedido explícito."
+        )
+        return (
+            "Instruções permanentes do JARVIS (aplicam-se a esta conversa):\n"
+            + instrucoes + nota + "\n\nMensagem do usuário:\n" + texto + LEMBRETE
+        )
 
     def perguntar(self, texto, limite=300, ao_avisar=None, aviso_apos=None):
         with self.lock:
             if not self.vivo():
                 self.iniciar()
             espera = time.time()
-            self.livre.wait(timeout=20)  # espera o Claude fechar a rodada anterior
-            turno = TurnoClaude(ao_avisar)
+            self.livre.wait(timeout=20)
+            turno = TurnoCodex(ao_avisar)
             turno.marcas["esperou_rodada_s"] = round(time.time() - espera, 2)
             self.turno = turno
+            self.texto_turno = ""
             self.livre.clear()
             self.ferramentas_turno = []
-            msg = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": texto + LEMBRETE}]}}
-            self.proc.stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
-            self.proc.stdin.flush()
-            if aviso_apos:  # pergunta de dado: se demorar, fala "Um instante, Senhor."
+
+            sandbox = {
+                "type": "workspaceWrite",
+                "writableRoots": [str(CFG["pasta"])],
+                "networkAccess": CFG["rede"],
+            }
+            parametros = {
+                "threadId": self.thread_id,
+                "input": [{"type": "text", "text": self._prompt(texto)}],
+                "cwd": str(CFG["pasta"]),
+                "approvalPolicy": CFG["aprovacao"],
+                "sandboxPolicy": sandbox,
+            }
+            if CFG["modelo"]:
+                parametros["model"] = CFG["modelo"]
+            if CFG["esforco"]:
+                parametros["effort"] = CFG["esforco"]
+
+            try:
+                iniciado = self._rpc("turn/start", parametros, limite=40)
+                self.turn_id = (iniciado.get("turn") or {}).get("id")
+                if not self.turn_id:
+                    raise RuntimeError("O Codex não confirmou o início da tarefa.")
+            except Exception as erro:
+                self.livre.set()
+                return {"result": str(erro), "is_error": True}
+
+            if aviso_apos:
                 relogio = threading.Timer(aviso_apos, turno.avisar)
                 relogio.daemon = True
                 relogio.start()
             try:
                 return turno.fila.get(timeout=limite)
             except queue.Empty:
+                self.interromper()
                 self.parar()
-                return {"is_error": True, "result": "Senhor, demorei demais e reiniciei a conversa. Pode repetir?"}
+                return {"is_error": True, "result": "Senhor, o Codex demorou demais. Reiniciei a sessão; pode repetir?"}
 
 
-SESSAO = SessaoClaude()
+SESSAO = SessaoCodex()
 
 
 # ---------------------------------------------------------------- transcrição
@@ -635,7 +840,7 @@ AVISOS_PRONTOS = ["Um instante, Senhor.", "Deixa comigo, Senhor.", "Verificando,
 
 # ---------------------------------------------------------------- pré-busca
 # Pergunta que bate com um gatilho de gatilhos.json já sai com o dado buscado:
-# o atalho roda enquanto a pergunta vai pro Claude e ele só precisa falar.
+# o atalho roda enquanto a pergunta vai para o Codex, que só precisa responder.
 
 def carregar_gatilhos():
     try:
@@ -703,6 +908,30 @@ def interromper():
 
 
 def processar(audio=None, mime="audio/webm", texto=None):
+    # Uma aprovação nativa do Codex é respondida pelo próximo comando de voz ou texto.
+    if SESSAO.tem_aprovacao():
+        try:
+            if audio is not None:
+                EVENTOS.emitir({"tipo": "estado", "estado": "transcrevendo"})
+                texto = transcrever(audio, mime)
+            texto = (texto or "").strip()
+            if not texto:
+                EVENTOS.emitir({"tipo": "aviso", "texto": "Não consegui entender. Diga confirma ou cancela."})
+                return
+            EVENTOS.emitir({"tipo": "voce", "texto": texto})
+            palavras = normalizar(texto)
+            if eh_confirmacao(texto):
+                SESSAO.resolver_aprovacao(True)
+                EVENTOS.emitir({"tipo": "aviso", "texto": "Autorização enviada ao Codex."})
+            elif palavras and palavras[0] in {"cancela", "cancelar", "nao", "negativo", "desiste"}:
+                SESSAO.resolver_aprovacao(False)
+                EVENTOS.emitir({"tipo": "aviso", "texto": "Solicitação recusada."})
+            else:
+                EVENTOS.emitir({"tipo": "aviso", "texto": "O Codex aguarda confirmação. Diga confirma ou cancela."})
+        except Exception as erro:
+            EVENTOS.emitir({"tipo": "aviso", "texto": f"Não consegui responder à aprovação: {erro}"})
+        return
+
     # Se o pedido anterior foi interrompido, ele libera em instantes: espera um pouco.
     if not Turno.ocupado.acquire(timeout=10 if Turno.interrompido else 0.01):
         EVENTOS.emitir({"tipo": "aviso", "texto": "Ainda estou no pedido anterior, Senhor."})
@@ -733,7 +962,7 @@ def processar(audio=None, mime="audio/webm", texto=None):
             registro["confirmou"] = True
 
         EVENTOS.emitir({"tipo": "estado", "estado": "pensando"})
-        t_claude = time.time()
+        t_codex = time.time()
 
         def avisar(frase=None):
             # "Um instante, Senhor." sai na hora, enquanto ele trabalha.
@@ -754,7 +983,7 @@ def processar(audio=None, mime="audio/webm", texto=None):
         if dados:
             registro["prebusca_s"] = round(time.time() - t_busca, 2)
         r = SESSAO.perguntar(texto + dados, ao_avisar=avisar, aviso_apos=2.5 if dados else None)
-        registro["claude_s"] = round(time.time() - t_claude, 2)
+        registro["codex_s"] = round(time.time() - t_codex, 2)
         registro["cedo"] = bool(r.get("cedo"))
         if SESSAO.turno:
             registro["etapas"] = {k: v for k, v in SESSAO.turno.marcas.items() if k != "envio"}
@@ -811,7 +1040,7 @@ def aquecer_atalhos():
 
 
 def aquecer():
-    """Primeira chamada ao abrir: conecta as ferramentas e deixa o Claude pronto."""
+    """Primeira chamada ao abrir: conecta as ferramentas e deixa o Codex pronto."""
     threading.Thread(target=aquecer_atalhos, daemon=True).start()
     EVENTOS.emitir({"tipo": "estado", "estado": "aquecendo"})
     try:
@@ -853,7 +1082,7 @@ class Servidor(BaseHTTPRequestHandler):
         if caminho.startswith("/api/voz/"):
             return self.voz(caminho.rsplit("/", 1)[-1])
         if caminho == "/api/saude":
-            corpo = json.dumps({"claude": SESSAO.vivo(), "pasta": str(CFG["pasta"]), "modelo": CFG["modelo"],
+            corpo = json.dumps({"codex": SESSAO.vivo(), "pasta": str(CFG["pasta"]), "modelo": CFG["modelo"],
                                 "telas": len(EVENTOS.ouvintes)})
             return self.responder(200, corpo.encode())
         arquivo = (WEB / ("index.html" if caminho == "/" else caminho.lstrip("/"))).resolve()
@@ -868,7 +1097,7 @@ class Servidor(BaseHTTPRequestHandler):
         corpo = self.rfile.read(tamanho) if tamanho else b""
         if self.path == "/api/interromper":
             return self.responder(200, json.dumps({"interrompeu": interromper()}).encode())
-        if self.path in ("/api/audio", "/api/texto") and Turno.ocupado.locked() and not Turno.interrompido:
+        if self.path in ("/api/audio", "/api/texto") and Turno.ocupado.locked() and not Turno.interrompido and not SESSAO.tem_aprovacao():
             return self.responder(409, b'{"ocupado":true}')  # a tela avisa e espera
         if self.path == "/api/audio":
             if len(corpo) < 2000:  # toque rápido no espaço, sem fala
@@ -961,9 +1190,13 @@ class Servidor(BaseHTTPRequestHandler):
 def completar_path():
     """Quando abre pelo app (fora do terminal), o PATH vem curto. Procura nos lugares de costume."""
     atual = os.environ.get("PATH", "").split(os.pathsep)
-    for pasta in ("~/.npm-global/bin", "~/.local/bin", "~/.claude/local", "/opt/homebrew/bin",
+    for pasta in ("~/.npm-global/bin", "~/.local/bin", "~/.codex/bin", "/opt/homebrew/bin",
                   "/usr/local/bin", "/opt/homebrew/opt/ffmpeg-full/bin"):
         pasta = os.path.expanduser(pasta)
+        if os.name == "nt":
+            npm_global = os.path.join(os.environ.get("APPDATA", ""), "npm")
+            if npm_global and os.path.isdir(npm_global) and npm_global not in atual:
+                atual.append(npm_global)
         if os.path.isdir(pasta) and pasta not in atual:
             atual.append(pasta)
     os.environ["PATH"] = os.pathsep.join(atual)
@@ -973,8 +1206,8 @@ def main():
     completar_path()
     if not CFG["pasta"].is_dir():
         sys.exit(f"JARVIS_PASTA não existe: {CFG['pasta']}")
-    if not shutil.which("claude"):
-        sys.exit("Não achei o Claude Code (comando 'claude'). Instale antes: https://claude.com/claude-code")
+    if not (shutil.which(CFG["codex_bin"]) or shutil.which(CFG["codex_bin"] + ".cmd")):
+        sys.exit("Não achei o Codex CLI (comando codex). Instale e faça login: https://developers.openai.com/codex/cli")
     if not CFG["eleven_key"]:
         print("Aviso: sem ELEVENLABS_API_KEY. Ele vai responder só em texto na tela.")
     servidor = ThreadingHTTPServer(("127.0.0.1", CFG["porta"]), Servidor)

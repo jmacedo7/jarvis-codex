@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     func applicationWillTerminate(_ notification: Notification) {
         encerrando = true
         guard let p = servidor, p.isRunning else { return }
-        p.terminate()  // o servidor fecha o Claude Code junto
+        p.terminate()  // o servidor fecha a sessão do Codex junto
         let limite = Date().addingTimeInterval(4)
         while p.isRunning && Date() < limite { usleep(100_000) }
     }
@@ -168,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         let log = FileHandle(forWritingAtPath: caminhoLog)
 
         let p = Process()
-        // Shell de login interativo: carrega o PATH do .zshrc (onde costuma estar o claude).
+        // Shell de login interativo: carrega o PATH do .zshrc (onde costuma estar o codex).
         p.executableURL = URL(fileURLWithPath: "/bin/zsh")
         let seguro = pasta.replacingOccurrences(of: "'", with: "'\\''")
         p.arguments = ["-lic", "cd '\(seguro)' && exec python3 server.py --sem-abrir"]

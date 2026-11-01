@@ -17,7 +17,7 @@ PORTA="${PORTA:-8790}"
 ALVO="$DESTINO/JARVIS.app"
 if [ -d "$ALVO" ]; then
   ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$ALVO/Contents/Info.plist" 2>/dev/null || true)"
-  if [ "$ID" != "local.jarvis.claude-code" ]; then
+  if [ "$ID" != "local.jarvis.codex" ] && [ "$ID" != "local.jarvis.claude-code" ]; then
     echo "Já existe outro app chamado JARVIS em $DESTINO ($ID). Não vou sobrescrever." >&2
     exit 1
   fi

@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>JARVIS</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.jarvis.claude-code</string>
+	<string>local.jarvis.codex</string>
 	<key>CFBundleExecutable</key>
 	<string>JARVIS</string>
 	<key>CFBundleIconFile</key>
@@ -32,7 +32,7 @@
 		<true/>
 	</dict>
 	<key>NSHumanReadableCopyright</key>
-	<string>Assistente de voz em cima do Claude Code. Licença MIT.</string>
+	<string>Assistente de voz conectado ao Codex. Licença MIT.</string>
 	<key>JarvisPasta</key>
 	<string>__PASTA__</string>
 	<key>JarvisPorta</key>
