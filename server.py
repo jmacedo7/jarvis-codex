@@ -1150,13 +1150,7 @@ class Servidor(BaseHTTPRequestHandler):
         if self.path == "/api/reiniciar":
             SESSAO.parar()
             Turno.aguardando_confirmacao = False
-            try:
-        from security.agent import iniciar as iniciar_seguranca
-        ponte_seguranca = iniciar_seguranca(EVENTOS, ESTADO, CFG)
-    except Exception as erro:
-        ponte_seguranca = None
-        print("JARVIS: módulo de segurança não iniciou:", repr(erro))
-    threading.Thread(target=aquecer, daemon=True).start()
+            threading.Thread(target=aquecer, daemon=True).start()
             return self.responder(200, b'{"ok":true}')
         self.responder(404, b"{}")
 
@@ -1239,6 +1233,13 @@ def main():
     servidor.daemon_threads = True
     url = f"http://localhost:{CFG['porta']}"
     print(f"JARVIS no ar em {url}  (pasta: {CFG['pasta']})")
+
+    try:
+        from security.agent import iniciar as iniciar_seguranca
+        ponte_seguranca = iniciar_seguranca(EVENTOS, ESTADO, CFG)
+    except Exception as erro:
+        ponte_seguranca = None
+        print("JARVIS: módulo de segurança não iniciou:", repr(erro))
 
     def encerrar(*_):
         SESSAO.parar()
