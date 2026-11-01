@@ -52,3 +52,6 @@ body.jarvis-authenticated #jarvis-dashboard{opacity:1;transform:none}
 @media(max-width:900px){.dash-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#jarvis-dashboard{left:16px;right:16px;top:76px}.dash-card{min-height:100px}}
 @media(max-width:560px){.dash-grid{grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}.dash-card{padding:11px;min-height:95px}.dash-clock{font-size:20px}.dash-greeting{font-size:20px}.dash-card-main{font-size:12px}#jarvis-dashboard{bottom:12px;overflow:auto}.boot-wrap{transform:scale(.92)}}
 @media(prefers-reduced-motion:reduce){#jarvis-boot:before,.scan-core:before,.scan-core:after,.scan-icon,.scan-sweep:after{animation:none!important}.dash-card,.boot-wrap{animation:none!important}}
+
+body.jarvis-authenticated #face-panel{top:auto;bottom:24px;left:24px;opacity:.82;transform:scale(.88);transform-origin:bottom left}
+@media(max-width:600px){body.jarvis-authenticated #face-panel{bottom:12px;left:12px;top:auto;width:190px}}
