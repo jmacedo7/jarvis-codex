@@ -36,25 +36,42 @@ def enroll(name):
             time.sleep(.25)
     finally: cap.release(); cv2.destroyAllWindows()
     db=_load(); db[name]=samples; _save(db); print(f"Cadastro de {name} salvo protegido pelo Windows DPAPI.")
-def run(on_unknown,stop_event=None):
+def run(on_unknown,on_status=None,stop_event=None):
     import numpy as np
     cv2,app=_engine(); db=_load()
     if not db: print('Nenhum familiar cadastrado. Execute: python -m security.face_guard enroll "Nome"'); return
     known=[(name,np.asarray(samples,dtype=np.float32)) for name,samples in db.items()]
     cap=cv2.VideoCapture(0,cv2.CAP_DSHOW if os.name=="nt" else 0)
     if not cap.isOpened(): raise RuntimeError("Não consegui abrir a webcam.")
-    last_alert=0; print("Reconhecimento facial ativo. Processamento local; Ctrl+C encerra.")
+    last_alert=0; last_status=None; last_emit=0
+    print("Reconhecimento facial ativo. Processamento local; Ctrl+C encerra.")
+    if on_status: on_status("active", None, None)
     try:
         while stop_event is None or not stop_event.is_set():
             ok,frame=cap.read()
-            if not ok: time.sleep(.5); continue
-            for face in app.get(frame):
-                emb=face.normed_embedding
-                if emb is None: continue
-                best=-1.0
-                for _,samples in known: best=max(best,float(np.max(samples@emb)))
-                if best<0.45 and time.time()-last_alert>60:
+            if not ok:
+                if on_status and (last_status != "camera_error" or time.time()-last_emit>5):
+                    on_status("camera_error", None, None); last_status="camera_error"; last_emit=time.time()
+                time.sleep(.5); continue
+            faces=app.get(frame)
+            status="no_face"; recognized=None; similarity=None
+            if faces:
+                status="unknown"
+                for face in faces:
+                    emb=face.normed_embedding
+                    if emb is None: continue
+                    best=-1.0; best_name=None
+                    for name,samples in known:
+                        score=float(np.max(samples@emb))
+                        if score>best: best=score; best_name=name
+                    if best>=0.45:
+                        status="recognized"; recognized=best_name; similarity=round(best,3); break
+                    similarity=round(best,3) if best>=0 else None
+                if status=="unknown" and time.time()-last_alert>60:
                     last_alert=time.time(); on_unknown(int(time.time()))
+            if on_status and (status!=last_status or time.time()-last_emit>5):
+                on_status(status, recognized, similarity)
+                last_status=status; last_emit=time.time()
             time.sleep(.15)
     finally: cap.release()
 def main():
