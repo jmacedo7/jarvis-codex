@@ -22,10 +22,12 @@ object SecretStore {
   val bytes=c.iv+c.doFinal(value.toByteArray(Charsets.UTF_8))
   context.getSharedPreferences("jarvis",Context.MODE_PRIVATE).edit().putString(name,Base64.encodeToString(bytes,Base64.NO_WRAP)).apply()
  }
- fun get(context:Context,name:String):String?=try {
-  val encoded=context.getSharedPreferences("jarvis",Context.MODE_PRIVATE).getString(name,null)?:return null
-  val b=Base64.decode(encoded,Base64.NO_WRAP); val c=Cipher.getInstance("AES/GCM/NoPadding")
-  c.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,b.copyOfRange(0,12)))
-  String(c.doFinal(b.copyOfRange(12,b.size)),Charsets.UTF_8)
- } catch(_:Exception){null}
+ fun get(context:Context,name:String):String? {
+  return try {
+   val encoded=context.getSharedPreferences("jarvis",Context.MODE_PRIVATE).getString(name,null) ?: return null
+   val b=Base64.decode(encoded,Base64.NO_WRAP); val c=Cipher.getInstance("AES/GCM/NoPadding")
+   c.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,b.copyOfRange(0,12)))
+   String(c.doFinal(b.copyOfRange(12,b.size)),Charsets.UTF_8)
+  } catch(_:Exception){null}
+ }
 }
