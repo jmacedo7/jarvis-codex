@@ -16,7 +16,8 @@ class NotificationRelayService:NotificationListenerService(){
  private val blockedPackages=listOf("authenticator","password","wallet","bank","banco","health","saude")
  override fun onNotificationPosted(sbn:StatusBarNotification){
   val topic=SecretStore.get(this,"topic")?:return;val secret=SecretStore.get(this,"secret")?:return
-  val pkg=sbn.packageName?:return;if(blockedPackages.any{pkg.contains(it,true)})return
+  val pkg=sbn.packageName?:return
+  if(pkg==packageName || pkg.contains("ntfy",true) || blockedPackages.any{pkg.contains(it,true)})return
   val extras=sbn.notification?.extras?:return
   val title=extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
   val body=(extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?:extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty()
