@@ -1,0 +1,41 @@
+name: JARVIS Python and UI checks
+
+on:
+  push:
+    branches: [feature/facial-security-android]
+    paths:
+      - "server.py"
+      - "security/**"
+      - "web/**"
+      - ".github/workflows/jarvis-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Compile Python modules
+        run: python -m py_compile server.py security/*.py
+      - name: Extract browser script
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("web/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+          if not scripts:
+              raise SystemExit("No inline JavaScript found in web/index.html")
+          Path("/tmp/jarvis-ui.js").write_text("\n".join(scripts), encoding="utf-8")
+          PY
+      - name: Check browser JavaScript syntax
+        run: node --check /tmp/jarvis-ui.js
