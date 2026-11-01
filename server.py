@@ -1246,7 +1246,25 @@ def tocar_musica_ao_iniciar():
     """Toca até 30 segundos de um arquivo local escolhido pelo usuário ao iniciar o JARVIS."""
     caminho = Path(CFG.get("wake_music_path") or "").expanduser()
     if not caminho.is_file():
-        EVENTOS.emitir({"tipo": "aviso", "texto": "Música de inicialização não encontrada. Configure JARVIS_WAKE_MUSIC_PATH com o caminho do arquivo Back in Black."})
+        extensoes = {".mp3", ".m4a", ".wav", ".wma", ".aac"}
+        pastas = [Path.home() / nome for nome in ("Music", "Downloads", "Desktop", "Música", "Área de Trabalho")]
+        candidatos = []
+        for pasta in pastas:
+            if not pasta.is_dir():
+                continue
+            try:
+                for item in pasta.iterdir():
+                    if item.is_file() and item.suffix.lower() in extensoes and "back in black" in item.stem.lower():
+                        candidatos.append(item)
+                    elif item.is_dir():
+                        for faixa in item.iterdir():
+                            if faixa.is_file() and faixa.suffix.lower() in extensoes and "back in black" in faixa.stem.lower():
+                                candidatos.append(faixa)
+            except OSError:
+                continue
+        caminho = candidatos[0] if candidatos else Path("")
+    if not caminho.is_file():
+        EVENTOS.emitir({"tipo": "aviso", "texto": "Não encontrei Back in Black. Coloque seu arquivo de áudio em Música/Downloads ou configure JARVIS_WAKE_MUSIC_PATH."})
         log({"evento": "wake_music_missing", "path_configurado": bool(CFG.get("wake_music_path"))})
         return
     if os.name != "nt":
