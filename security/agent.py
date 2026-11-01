@@ -23,7 +23,7 @@ def iniciar(eventos,estado_dir,cfg):
         except Exception as exc:
             print("JARVIS: reconhecimento facial não iniciou:",repr(exc))
             if eventos:
-                eventos.emitir({"tipo":"face_status","status":"error","name":None,"similarity":None})
+                eventos.emitir({"tipo":"face_status","status":"error","name":None,"similarity":None,"detail":str(exc)[:200]})
                 eventos.emitir({"tipo":"aviso","texto":"Reconhecimento facial indisponível: "+str(exc)[:200]})
     threading.Thread(target=camera,name="jarvis-face-guard",daemon=True).start()
     return bridge
