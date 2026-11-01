@@ -132,7 +132,7 @@ Sem ELEVENLABS_API_KEY, o JARVIS continua funcionando na tela, sem resposta fala
 
 Com a chave, o ElevenLabs gera a fala e também pode transcrever áudio. Para transcrição local, configure Whisper e WHISPER_URL; o modo auto tenta o Whisper primeiro e usa ElevenLabs como alternativa.
 
-Crie uma chave em Developers → API Keys no painel ElevenLabs e habilite Text to Speech; habilite Speech to Text também caso vá usar o microfone com `JARVIS_TRANSCRICAO=elevenlabs`. Coloque a chave somente no `.env`, em `ELEVENLABS_API_KEY`, nunca no Obsidian, no GitHub ou no chat. Defina `JARVIS_VOZ` com o ID de uma voz disponível na sua conta e `JARVIS_MODELO_VOZ=eleven_multilingual_v2`. A lista de vozes mostrada na engrenagem continua em `vozes.json`; as preferências escolhidas na engrenagem ficam salvas em `.estado/preferencias.json`.
+Crie uma chave em Developers → API Keys no painel ElevenLabs e habilite Text to Speech; habilite Speech to Text também caso vá usar o microfone com `JARVIS_TRANSCRICAO=elevenlabs`. Coloque a chave somente no `.env`, em `ELEVENLABS_API_KEY`, nunca no Obsidian, no GitHub ou no chat. Defina `JARVIS_VOZ` com o ID de uma voz disponível na sua conta e `JARVIS_MODELO_VOZ=eleven_multilingual_v2`. Para evitar problemas de disponibilidade via API, prefira uma voz da sua seção My Voices; vozes públicas da Voice Library não estão disponíveis via API para contas do plano gratuito. A lista mostrada na engrenagem fica em `vozes.json`; as preferências escolhidas ali são salvas em `.estado/preferencias.json`.
 
 ## Atalhos e pré-busca
 
