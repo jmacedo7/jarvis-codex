@@ -1,7 +1,7 @@
 (() => {
   const $=id=>document.getElementById(id);
   const boot=$("jarvis-boot"), status=$("boot-status"), sub=$("boot-sub"), ring=$("scan-progress"), meter=$("boot-meter-fill");
-  let progress=3, unlocked=false, knownNotifications=new Set();
+  let progress=3, unlocked=false, dashboardLoaded=false, knownNotifications=new Set();
   const setProgress=n=>{progress=Math.max(progress,Math.min(100,n));ring.style.strokeDashoffset=String(628-(628*progress/100));meter.style.width=progress+"%";};
   const showStatus=(title,detail,pct)=>{status.textContent=title;sub.textContent=detail;if(pct!=null)setProgress(pct);};
   function unlock(name){
@@ -33,7 +33,7 @@
   }
   function clock(){const now=new Date();$("dash-time").textContent=now.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});$("dash-date").textContent=now.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"});}
   async function loadDashboard(){
-    clock();setInterval(clock,1000);
+    clock();
     try{
       const r=await fetch("/api/painel",{cache:"no-store"});if(!r.ok)throw new Error("painel indisponível");
       const data=await r.json(),items=data.notifications||[];
@@ -41,11 +41,11 @@
       const list=$("dash-notifications");list.replaceChildren();
       if(!items.length){$("dash-notifications-empty").hidden=false;}
       else{$("dash-notifications-empty").hidden=true;items.slice(0,5).forEach(n=>{const item=document.createElement("div");item.className="dash-notification";const strong=document.createElement("strong");strong.textContent=(n.app||"Celular")+" · "+(n.title||"Notificação");const text=document.createElement("span");text.textContent=n.text||"Nova notificação";item.append(strong,text);list.append(item);});}
-      items.slice().reverse().forEach(n=>{const id=[n.received_at,n.app,n.title,n.text].join("|");if(knownNotifications.has(id))return;knownNotifications.add(id);toast("NOTIFICAÇÃO DO CELULAR",(n.app||"Celular")+" · "+(n.title||"Nova notificação"),n.text||"Você recebeu uma notificação.");});
+      items.slice().reverse().forEach(n=>{const id=[n.received_at,n.app,n.title,n.text].join("|");if(knownNotifications.has(id))return;knownNotifications.add(id);if(dashboardLoaded)toast("NOTIFICAÇÃO DO CELULAR",(n.app||"Celular")+" · "+(n.title||"Nova notificação"),n.text||"Você recebeu uma notificação.");});dashboardLoaded=true;
     }catch(e){$("dash-notification-count").textContent="Sem conexão";}
   }
-  function connect(){const source=new EventSource("/api/eventos");source.onmessage=ev=>{try{const e=JSON.parse(ev.data);if(e.tipo==="face_status")face(e);else if(e.tipo==="aviso"&&e.texto&&e.texto.startsWith("Notificação recebida do celular:"))toast("NOTIFICAÇÃO DO CELULAR","Nova mensagem",e.texto.replace("Notificação recebida do celular:","").trim());}catch(_){}};}
-  connect();setTimeout(()=>{if(!unlocked)showStatus("Aguardando reconhecimento","A câmera está iniciando. Mantenha o rosto visível por alguns segundos.",12);},8000);
+  function connect(){const source=new EventSource("/api/eventos");source.onmessage=ev=>{try{const e=JSON.parse(ev.data);if(e.tipo==="face_status")face(e);}catch(_){}};}
+  clock();setInterval(clock,1000);connect();setTimeout(()=>{if(!unlocked)showStatus("Aguardando reconhecimento","A câmera está iniciando. Mantenha o rosto visível por alguns segundos.",12);},8000);
   setInterval(()=>{if(unlocked)loadDashboard();},30000);
   $("dash-email").textContent="Integração de e-mail não conectada";
   $("dash-events").textContent="Agenda não conectada";
