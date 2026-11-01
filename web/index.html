@@ -131,6 +131,19 @@
   .velocidade { width: 100%; accent-color: #fff; }
   .config-nota { margin-top: 14px; font-size: 12px; color: var(--fraco); }
 
+  #face-panel {
+    position: fixed; top: 76px; left: 24px; z-index: 4; width: min(270px, calc(100vw - 48px));
+    box-sizing: border-box; padding: 14px 16px; border: 1px solid rgba(255,255,255,.16);
+    border-radius: 14px; background: rgba(8,8,8,.76); -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px); color: var(--texto); pointer-events: none;
+  }
+  #face-panel .face-kicker { font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--suave); }
+  #face-status { margin-top: 8px; font-size: 14px; font-weight: 600; }
+  #face-detail { margin-top: 5px; color: var(--suave); font-size: 11px; line-height: 1.5; }
+  @media (max-width: 600px) {
+    #face-panel { top: 64px; left: 12px; width: 220px; padding: 11px 12px; }
+  }
+
   @keyframes pisca { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
   @keyframes entra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @media (max-width: 600px) {
@@ -174,6 +187,12 @@
   <div class="tempo" id="tempo"></div>
   <div class="aviso" id="aviso"></div>
 </div>
+
+<section id="face-panel" aria-live="polite" aria-label="Reconhecimento facial">
+  <div class="face-kicker">Segurança · reconhecimento facial</div>
+  <div id="face-status">Iniciando câmera…</div>
+  <div id="face-detail">Processamento local · nenhum vídeo é enviado.</div>
+</section>
 
 <div class="dica" id="dica">Segure <b>espaço</b> pra falar · <b>T</b> digitar · <b>N</b> nova conversa · <b>H</b> detalhes</div>
 
@@ -316,6 +335,7 @@
   function pararFala() {
     fila = [];
     tocando = false;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     if (falaAtual) {
       const f = falaAtual;
       falaAtual = null;
@@ -330,28 +350,47 @@
     return decodificar(await resposta.arrayBuffer());
   }
 
-  function falar(url) {
-    if (!url) {
+  function falarLocal(texto, terminou) {
+    if (!texto || !("speechSynthesis" in window)) return false;
+    const fala = new SpeechSynthesisUtterance(texto);
+    fala.lang = "pt-BR";
+    fala.rate = 1;
+    const vozesLocais = window.speechSynthesis.getVoices();
+    const vozPt = vozesLocais.find((v) => /^pt(-|_)?br/i.test(v.lang)) ||
+                  vozesLocais.find((v) => /^pt/i.test(v.lang));
+    if (vozPt) fala.voice = vozPt;
+    fala.onstart = () => mudarEstado("falando");
+    fala.onend = () => { diag("voz_local_tocou", texto.slice(0, 80)); terminou(); };
+    fala.onerror = (ev) => { diag("voz_local_falhou", ev.error || "erro"); terminou(); };
+    window.speechSynthesis.speak(fala);
+    return true;
+  }
+
+  function falar(url, texto = "") {
+    if (!url && !texto) {
       if (!tocando) mudarEstado(turnoAberto ? "pensando" : "parado");
       return;
     }
-    const pendente = baixar(url);  // já baixa enquanto a fala anterior toca
-    pendente.catch(() => {});
-    fila.push(pendente);
+    fila.push({ promise: url ? baixar(url) : Promise.resolve(null), texto });
     if (!tocando) proxima();
   }
 
   async function proxima() {
-    const pendente = fila.shift();
-    if (!pendente) {
+    const item = fila.shift();
+    if (!item) {
       tocando = false;
       mudarEstado(turnoAberto ? "pensando" : "parado");
       return;
     }
     tocando = true;
     try {
-      const buffer = await pendente;
-      if (!tocando) return;  // cancelada (você começou a falar)
+      if (!item.promise || !item.texto && !item.promise) throw new Error("fala vazia");
+      const buffer = await item.promise;
+      if (!tocando) return;
+      if (!buffer) {
+        if (falarLocal(item.texto, () => { tocando = false; proxima(); })) return;
+        throw new Error("voz remota indisponível e navegador sem voz local");
+      }
       if (audioCtx.state !== "running") {
         throw new Error("som bloqueado pelo navegador (estado " + audioCtx.state + ")");
       }
@@ -361,6 +400,7 @@
       fonte.onended = () => {
         if (falaAtual === fonte) {
           falaAtual = null;
+          tocando = false;
           proxima();
         }
       };
@@ -370,7 +410,9 @@
       diag("voz_tocou", buffer.duration.toFixed(1) + " s");
     } catch (erro) {
       diag("voz_falhou", erro && erro.message ? erro.message : erro);
-      avisar("Não consegui tocar a voz. Clique na janela e tente de novo.");
+      if (falarLocal(item.texto, () => { tocando = false; proxima(); })) return;
+      avisar("A voz online falhou e não há voz local disponível neste navegador.");
+      tocando = false;
       proxima();
     }
   }
@@ -517,6 +559,24 @@
     avisoTimer = setTimeout(() => { el("aviso").textContent = ""; }, 6000);
   }
 
+  function atualizarReconhecimento(e) {
+    const status = {
+      starting: ["Iniciando reconhecimento…", "Carregando modelo facial no computador."],
+      active: ["Câmera ativa", "Aguardando um rosto · análise local."],
+      no_face: ["Câmera ativa · nenhum rosto", "Aguardando alguém aparecer no enquadramento."],
+      recognized: ["Pessoa reconhecida: " + (e.name || "familiar"), "Correspondência facial " + (e.similarity == null ? "" : (Math.round(e.similarity * 100) + "%")) + " · processamento local."],
+      unknown: ["Pessoa não reconhecida", "Alerta de segurança enviado conforme configuração."],
+      not_enrolled: ["Cadastro facial pendente", "Cadastre um familiar com security.face_guard enroll."],
+      disabled: ["Reconhecimento desativado", "Ative JARVIS_FACE_ENABLED=1 para iniciar."],
+      camera_error: ["Erro na câmera", "Verifique se a webcam está conectada e não está sendo usada por outro aplicativo."],
+      error: ["Falha no reconhecimento", "Consulte o terminal do JARVIS para ver o erro."],
+    };
+    const info = status[e.status] || ["Reconhecimento facial", "Estado: " + e.status];
+    el("face-status").textContent = info[0];
+    el("face-detail").textContent = info[1];
+    el("face-panel").dataset.status = e.status || "";
+  }
+
   function conectar() {
     const fonte = new EventSource("/api/eventos");
     fonte.onmessage = (ev) => {
@@ -533,13 +593,15 @@
       } else if (e.tipo === "ferramenta") {
         chip(e.rotulo);
       } else if (e.tipo === "fala") {
-        falar(e.audio);  // aviso rápido, o trabalho continua
+        falar(e.audio, e.texto);  // voz remota ou síntese local como alternativa
       } else if (e.tipo === "resposta") {
         turnoAberto = false;
         document.querySelectorAll(".chip").forEach((c) => c.classList.add("feito"));
         el("resposta").textContent = e.texto;
         el("tempo").textContent = "respondeu em " + String(e.segundos).replace(".", ",") + " s";
-        falar(e.audio);
+        falar(e.audio, e.texto);
+      } else if (e.tipo === "face_status") {
+        atualizarReconhecimento(e);
       } else if (e.tipo === "aviso") {
         avisar(e.texto);
       }
