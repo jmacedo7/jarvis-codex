@@ -82,6 +82,7 @@ def carregar_config():
         "ntfy_alerts": base.get("JARVIS_NTFY_ALERTS", ""),
         "mobile_secret": base.get("JARVIS_MOBILE_SECRET", ""),
         "face_enabled": base.get("JARVIS_FACE_ENABLED", "1"),
+        "wake_music_path": base.get("JARVIS_WAKE_MUSIC_PATH", ""),
     }
 
 
@@ -244,8 +245,9 @@ def rotulo_ferramenta(nome, entrada):
 
 LEMBRETE = ("\n\n[modo JARVIS: seja direto, preciso e natural em português do Brasil. "
             "Perguntas simples devem ser respondidas sem ferramentas. Se precisar trabalhar, "
-            "avise em uma frase curta antes de agir. Resposta falada: no máximo 2 frases curtas, "
-            "até 30 palavras. Trate o dono por Senhor.]")
+            "avise em uma frase curta antes de agir. Respostas comuns podem ser breves; "
+            "quando o usuário pedir relatório, análise ou resumo, entregue o conteúdo completo. "
+            "Trate o dono por Senhor.]")
 ESPERA_AVISO = 0.3
 
 
@@ -604,6 +606,12 @@ class SessaoCodex:
         return (
             "Instruções permanentes do JARVIS (aplicam-se a esta conversa):\n"
             + instrucoes + nota + "\n\nMensagem do usuário:\n" + texto + LEMBRETE
+            + ("\n\n[PRIORIDADE: este é o comando de encerramento do dia. NÃO responda apenas com uma saudação. "
+               "Prepare agora um relatório organizado e útil do dia, consultando os arquivos, registros, tarefas e agenda disponíveis "
+               "na pasta de trabalho. Inclua: resumo do dia, atividades/conquistas, pendências, compromissos próximos e prioridades de amanhã. "
+               "Use somente fatos encontrados; se não houver dados para uma seção, informe isso claramente. "
+               "Mostre o relatório na tela em tópicos e faça uma versão falada resumida. Não invente acontecimentos.]"
+               if "[RELATORIO_FIM_DIA]" in texto else "")
         )
 
     def perguntar(self, texto, limite=300, ao_avisar=None, aviso_apos=None):
@@ -745,6 +753,13 @@ def normalizar(texto):
     return re.sub(r"[^a-z0-9 ]", " ", sem_acento).split()
 
 
+def eh_comando_fim_dia(texto):
+    palavras = set(normalizar(texto))
+    normalizado = " ".join(normalizar(texto))
+    frases = ("boa noite", "vou dormir", "indo dormir", "encerrar o dia", "fechar o dia", "fim do dia")
+    return any(frase in normalizado for frase in frases) or ({"jarvis", "encerrar"} <= palavras and "dia" in palavras)
+
+
 AFIRMACOES = {"sim", "confirma", "confirmo", "confirmado", "pode", "manda", "isso", "ok", "okay",
               "fechado", "vai", "faz", "beleza", "claro", "positivo", "certo", "bora"}
 
@@ -766,7 +781,7 @@ def limpar_para_fala(texto):
     texto = re.sub(r"[*_#`>|]", "", texto)
     texto = re.sub(r"^\s*[-•]\s*", "", texto, flags=re.M)
     texto = " ".join(texto.split())
-    return texto[:700]
+    return texto[:2800]
 
 
 class Fala:
@@ -998,10 +1013,15 @@ def processar(audio=None, mime="audio/webm", texto=None):
                 EVENTOS.emitir({"tipo": "fala", "texto": frase, "audio": f"/api/voz/{id_fala}"})
 
         t_busca = time.time()
+        pedido_codex = texto
+        if eh_comando_fim_dia(texto):
+            pedido_codex += ("\n\n[RELATORIO_FIM_DIA] Gere o relatório de encerramento do dia conforme as instruções prioritárias. "
+                             "A saudação 'boa noite' é um comando para gerar o relatório, não apenas uma despedida.")
         dados = prebusca(texto)
         if dados:
             registro["prebusca_s"] = round(time.time() - t_busca, 2)
-        r = SESSAO.perguntar(texto + dados, ao_avisar=avisar, aviso_apos=2.5 if dados else None)
+        r = SESSAO.perguntar(pedido_codex + dados, limite=420 if eh_comando_fim_dia(texto) else 300,
+                             ao_avisar=avisar, aviso_apos=2.5 if dados else None)
         registro["codex_s"] = round(time.time() - t_codex, 2)
         registro["cedo"] = bool(r.get("cedo"))
         if SESSAO.turno:
@@ -1221,6 +1241,35 @@ def completar_path():
     os.environ["PATH"] = os.pathsep.join(atual)
 
 
+
+def tocar_musica_ao_iniciar():
+    """Toca até 30 segundos de um arquivo local escolhido pelo usuário ao iniciar o JARVIS."""
+    caminho = Path(CFG.get("wake_music_path") or "").expanduser()
+    if not caminho.is_file():
+        EVENTOS.emitir({"tipo": "aviso", "texto": "Música de inicialização não encontrada. Configure JARVIS_WAKE_MUSIC_PATH com o caminho do arquivo Back in Black."})
+        log({"evento": "wake_music_missing", "path_configurado": bool(CFG.get("wake_music_path"))})
+        return
+    if os.name != "nt":
+        log({"evento": "wake_music_indisponivel", "motivo": "reprodução automática implementada para Windows"})
+        return
+    script = (
+        "Add-Type -AssemblyName PresentationCore; "
+        "$p = New-Object System.Windows.Media.MediaPlayer; "
+        "$u = [Uri]::new($env:JARVIS_WAKE_MUSIC_PATH); "
+        "$p.Open($u); Start-Sleep -Milliseconds 900; $p.Volume = 0.75; $p.Play(); "
+        "Start-Sleep -Seconds 30; $p.Stop(); $p.Close()"
+    )
+    env = os.environ.copy()
+    env["JARVIS_WAKE_MUSIC_PATH"] = str(caminho.resolve())
+    try:
+        subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        log({"evento": "wake_music_started", "duration_seconds": 30})
+    except Exception as erro:
+        log({"evento": "wake_music_failed", "erro": repr(erro)})
+
+
 def main():
     completar_path()
     if not CFG["pasta"].is_dir():
@@ -1249,6 +1298,8 @@ def main():
 
     signal.signal(signal.SIGTERM, encerrar)
     threading.Thread(target=aquecer, daemon=True).start()
+    if CFG.get("wake_music_path"):
+        threading.Thread(target=tocar_musica_ao_iniciar, daemon=True).start()
     if "--sem-abrir" not in sys.argv:
         webbrowser.open(url)
     try:
