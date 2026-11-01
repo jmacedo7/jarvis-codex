@@ -7,6 +7,7 @@ on:
       - "server.py"
       - "security/**"
       - "web/**"
+      - "requirements-security.txt"
       - ".github/workflows/jarvis-checks.yml"
   workflow_dispatch:
 
@@ -38,4 +39,6 @@ jobs:
           Path("/tmp/jarvis-ui.js").write_text("\n".join(scripts), encoding="utf-8")
           PY
       - name: Check browser JavaScript syntax
-        run: node --check /tmp/jarvis-ui.js
+        run: |
+          node --check /tmp/jarvis-ui.js
+          node --check web/dashboard.js
