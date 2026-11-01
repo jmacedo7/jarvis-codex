@@ -46,7 +46,8 @@ class MobileBridge:
             summary=(record["app"]+": "+record["title"]+" — "+record["text"]).strip(" :—")
             self.events.emitir({"tipo":"aviso","texto":"Notificação recebida do celular: "+summary[:500]})
     def _listen(self):
-        url=self.server+"/"+urllib.parse.quote(self.inbox,safe="")+"/json"
+        started=int(time.time())
+        url=self.server+"/"+urllib.parse.quote(self.inbox,safe="")+"/json?since="+str(started)
         while not self.stop_event.is_set():
             try:
                 req=urllib.request.Request(url,headers={"Accept":"application/x-ndjson"})
