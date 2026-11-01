@@ -610,7 +610,8 @@ class SessaoCodex:
                "Prepare agora um relatório organizado e útil do dia, consultando os arquivos, registros, tarefas e agenda disponíveis "
                "na pasta de trabalho. Inclua: resumo do dia, atividades/conquistas, pendências, compromissos próximos e prioridades de amanhã. "
                "Use somente fatos encontrados; se não houver dados para uma seção, informe isso claramente. "
-               "Mostre o relatório na tela em tópicos e faça uma versão falada resumida. Não invente acontecimentos.]"
+               "Mostre o relatório na tela com títulos e tópicos. Termine obrigatoriamente com uma seção chamada 'Resumo falado:' "
+               "contendo 2 a 3 frases curtas para a leitura em voz alta. Não invente acontecimentos.]"
                if "[RELATORIO_FIM_DIA]" in texto else "")
         )
 
