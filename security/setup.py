@@ -14,7 +14,7 @@ def main():
     secret=secrets.token_urlsafe(48)
     block="\n# JARVIS mobile companion (local secrets; never commit .env)\nJARVIS_NTFY_SERVER=https://ntfy.sh\nJARVIS_NTFY_INBOX="+inbox+"\nJARVIS_NTFY_ALERTS="+alerts+"\nJARVIS_MOBILE_SECRET="+secret+"\nJARVIS_FACE_ENABLED=1\n"
     kept=[line for line in text.splitlines() if not line.startswith(("JARVIS_NTFY_SERVER=","JARVIS_NTFY_INBOX=","JARVIS_NTFY_ALERTS=","JARVIS_MOBILE_SECRET=","JARVIS_FACE_ENABLED="))]
-    env.write_text("\\n".join(kept).rstrip()+block,encoding="utf-8")
+    env.write_text("\n".join(kept).rstrip()+block,encoding="utf-8")
     pairing={"server":"https://ntfy.sh","inbox_topic":inbox,"alerts_topic":alerts,"shared_secret":secret}
     state=ROOT/".estado"; state.mkdir(exist_ok=True)
     (state/"mobile_pairing.json").write_text(json.dumps(pairing,indent=2),encoding="utf-8")
