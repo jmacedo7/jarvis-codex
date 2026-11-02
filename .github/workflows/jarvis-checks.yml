@@ -3,12 +3,6 @@ name: JARVIS Python and UI checks
 on:
   push:
     branches: [feature/facial-security-android]
-    paths:
-      - "server.py"
-      - "security/**"
-      - "web/**"
-      - "requirements-security.txt"
-      - ".github/workflows/jarvis-checks.yml"
   workflow_dispatch:
 
 permissions:
@@ -17,6 +11,7 @@ permissions:
 jobs:
   static-checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,8 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Compile Python modules
-        run: python -m py_compile server.py security/*.py
+      - name: Compile all JARVIS Python modules
+        run: python -m compileall -q server.py security atalhos hooks app
       - name: Extract browser script
         run: |
           python - <<'PY'
@@ -36,7 +31,7 @@ jobs:
           scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
           if not scripts:
               raise SystemExit("No inline JavaScript found in web/index.html")
-          Path("/tmp/jarvis-ui.js").write_text("\n".join(scripts), encoding="utf-8")
+          Path("/tmp/jarvis-ui.js").write_text(chr(10).join(scripts), encoding="utf-8")
           PY
       - name: Check browser JavaScript syntax
         run: |

@@ -3,9 +3,6 @@ name: Build JARVIS Android Companion
 on:
   push:
     branches: [feature/facial-security-android]
-    paths:
-      - "integrations/android-companion/**"
-      - ".github/workflows/android-companion.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,8 +23,6 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # "tools" is an obsolete SDK package and makes sdkmanager exit with code 1.
-          # Install only packages used by this Android app.
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
