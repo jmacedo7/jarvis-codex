@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity() {
             setText(SecretStore.get(this@MainActivity, "topic") ?: "")
             setTextColor(0xFFEAFBFF.toInt())
             setHintTextColor(0xFF6D8794.toInt())
-            singleLine = true
+            isSingleLine = true
         }
         secretField = EditText(this).apply {
             hint = "Segredo de pareamento"
@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
             setText(SecretStore.get(this@MainActivity, "secret") ?: "")
             setTextColor(0xFFEAFBFF.toInt())
             setHintTextColor(0xFF6D8794.toInt())
-            singleLine = true
+            isSingleLine = true
         }
         pairing.addView(topicField)
         pairing.addView(secretField)
