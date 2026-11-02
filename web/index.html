@@ -693,7 +693,11 @@
   function tocarAmostra(id) {
     pararFala();
     turnoAberto = false;
-    falar("/api/amostra/" + id + "?v=" + config.velocidade);
+    if (config && config.elevenlabs_configurado) {
+      falar("/api/amostra/" + id + "?v=" + config.velocidade);
+    } else {
+      falar("", "Às suas ordens, Senhor. Esta é a voz local disponível no navegador.");
+    }
   }
 
   async function escolherVoz(id) {
