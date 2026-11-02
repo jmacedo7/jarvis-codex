@@ -48,3 +48,21 @@ Dizer “boa noite” ou solicitar o encerramento do dia gera o relatório. Os r
 ## Integrações
 
 As notificações móveis dependem da configuração da ponte Android/ntfy. E-mail, agenda e clima continuam explicitamente marcados como não conectados até que um provedor e suas credenciais/OAuth sejam configurados. O JARVIS não inventa mensagens, compromissos ou condições climáticas.
+
+
+## Gmail e Google Agenda
+
+1. No Google Cloud Console, ative Gmail API e Google Calendar API.
+2. Configure a tela de consentimento OAuth e inclua sua conta como usuária de teste, se o app estiver em modo de teste.
+3. Crie uma credencial OAuth do tipo Aplicativo para computador.
+4. Coloque o Client ID e Client Secret em GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env.
+5. Reinicie o JARVIS e use Conectar Google no painel. O fluxo abre o navegador e retorna ao próprio computador.
+6. O JARVIS lê até cinco e-mails não lidos e oito eventos dos próximos sete dias. Os escopos são somente leitura. No Windows, o token é protegido pelo DPAPI em .estado/google_tokens.bin.
+
+## Samsung Health / Sono
+
+O JARVIS Companion usa Health Connect para receber dados sincronizados pelo Samsung Health. No Android, ative a sincronização do Samsung Health com Health Connect e permita Sleep e Steps ao JARVIS Companion. A sincronização para o PC é manual e criptografada pelo canal ntfy já pareado. O painel exibe a última sessão de sono e os passos do dia. O usuário pode revogar essas permissões a qualquer momento nas configurações do Health Connect.
+
+## Clima
+
+O cartão de clima consulta Open-Meteo somente depois que você digita uma cidade e toca em Consultar. Não usa geolocalização automática nem pede uma chave de API.

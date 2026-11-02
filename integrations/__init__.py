@@ -1,0 +1,1 @@
+"""Integrações locais do JARVIS."""

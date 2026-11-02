@@ -1,21 +1,35 @@
 # JARVIS Companion (Android)
 
-Aplicativo Android para encaminhar notificações selecionadas por filtro local ao JARVIS. O conteúdo é criptografado com AES-256-GCM antes do HTTPS. O usuário precisa conceder explicitamente o acesso às notificações.
+Companion para Android com encaminhamento de notificações selecionadas, pareamento criptografado AES-256-GCM e sincronização manual de sono/passos via Health Connect.
 
-## Build
+## Build do APK
 
-Abra esta pasta no Android Studio com JDK 17 e Android SDK 35, sincronize o Gradle e use Build > Build APK(s). Instale o APK debug no seu próprio Android.
+- JDK 17 e Android SDK 35.
+- Abra esta pasta no Android Studio e execute **Build > Build APK(s)**.
+- Ou, na raiz desta pasta, execute `gradle assembleDebug --no-daemon`.
+- O APK debug fica em `app/build/outputs/apk/debug/app-debug.apk`.
 
-## Pareamento
+## Pareamento de notificações
 
-1. No PC, execute: python -m security.setup
-2. Abra o arquivo local .estado/mobile_pairing.json. Nunca o envie a ninguém nem o publique.
-3. No app, informe inbox_topic e shared_secret; salve.
-4. Toque em Ativar acesso às notificações e habilite JARVIS Companion nas configurações do Android.
-5. No aplicativo oficial ntfy, assine o alerts_topic para receber alertas do PC.
+1. No PC, dentro da pasta do JARVIS, execute `python -m security.setup`.
+2. Abra o arquivo local `.estado/mobile_pairing.json`. Não envie o segredo a terceiros nem publique o arquivo.
+3. Informe `inbox_topic` e `shared_secret` no Companion e salve.
+4. Ative a permissão de acesso às notificações do JARVIS Companion nas configurações do Android.
+5. O app encaminha notificações selecionadas e filtradas ao tópico inbox. O PC recebe por ntfy e descriptografa localmente.
 
-O aplicativo envia notificações cifradas para inbox_topic. O PC publica alertas genéricos em alerts_topic, sem imagens ou dados biométricos.
+## Samsung Health / Health Connect
+
+O Companion lê **SleepSessionRecord** e **StepsRecord** pelo Health Connect. O envio ao JARVIS é manual; não há coleta contínua em segundo plano.
+
+1. Instale/atualize Samsung Health e Health Connect.
+2. Em Samsung Health, abra **Configurações > Health Connect** e habilite a sincronização de dados de sono e passos.
+3. No JARVIS Companion, toque em **Conectar Samsung Health / Health Connect**.
+4. Na tela de permissões do Android, libere **Sono** e **Passos**.
+5. Toque em **Sincronizar sono e passos agora**. Os dados são cifrados com AES-256-GCM e enviados ao mesmo tópico ntfy do pareamento.
+6. O painel do PC mostra a última sessão de sono sincronizada e a contagem de passos do dia.
+
+A leitura depende de o Samsung Health ter escrito os dados no Health Connect. O usuário pode revogar as permissões no Health Connect a qualquer momento. As leituras são para bem-estar/fitness e não servem para diagnóstico ou tratamento médico.
 
 ## Privacidade
 
-O filtro é heurístico, não infalível. Bloqueia termos comuns de senha, OTP, banco, finanças e saúde, além de pacotes com nomes sensíveis. Revise o código antes de conceder acesso. O serviço ntfy vê os nomes dos tópicos, horários e tamanho dos dados cifrados, mas não o texto das notificações. O JARVIS guarda localmente as últimas 200 notificações aceitas.
+O filtro de notificações é heurístico e não infalível. Termos e aplicativos comuns de autenticação, finanças e saúde são bloqueados antes do envio. Dados de saúde não são sincronizados automaticamente: o usuário concede permissões e inicia cada sincronização manualmente. O conteúdo trafega criptografado; o ntfy ainda observa nome do tópico, horário e tamanho do pacote cifrado. O JARVIS guarda as últimas 200 notificações aceitas e o último resumo de saúde localmente em `.estado/`.

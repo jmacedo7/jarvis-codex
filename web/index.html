@@ -152,7 +152,7 @@
     .topo .atalhos { display: none; }
   }
 </style>
-  <link rel="stylesheet" href="/dashboard.css?v=1">
+  <link rel="stylesheet" href="/dashboard.css?v=3">
 </head>
 <body data-estado="iniciando">
 <canvas id="esfera" aria-label="Esfera do JARVIS. Segure a barra de espaço para falar."></canvas>
@@ -763,19 +763,47 @@
 </script>
 
 <section id="jarvis-dashboard" aria-live="polite">
-  <div class="dash-head">
-    <div class="dash-greeting"><small>Protocolo de boas-vindas</small>Bom ter você de volta, Senhor.</div>
-    <div class="dash-clock"><span id="dash-time">--:--</span><small id="dash-date">Sincronizando horário</small></div>
+  <header class="orb-topbar">
+    <div class="orb-brand"><span class="orb-brand-mark">✧</span><div><b>JARVIS</b><small>É simplesmente um sistema muito inteligente.</small></div></div>
+    <div class="orb-status"><small>STATUS DO SISTEMA</small><span class="orb-dot"></span><b id="dash-system-state">ONLINE</b></div>
+    <div class="orb-clock"><small>HORA LOCAL</small><b id="dash-time">--:--:--</b><span id="dash-date">Sincronizando data</span></div>
+    <button id="dash-notification-toggle" class="orb-icon-button" type="button" aria-label="Notificações">♧<span id="dash-notification-count">0</span></button>
+  </header>
+  <div class="orb-side orb-left">
+    <article class="orb-card">
+      <div class="orb-card-head"><span>GMAIL //</span><span id="dash-email-state" class="orb-state">OFFLINE</span></div>
+      <div class="orb-card-caption" id="dash-email-note">Conta Google não conectada.</div>
+      <div id="dash-email-list" class="orb-items"><div class="orb-empty">Conecte o Google para ver e-mails não lidos.</div></div>
+      <div class="orb-actions"><button id="dash-google-connect" class="orb-action" type="button">Conectar Google</button><button id="dash-google-disconnect" class="orb-action quiet" type="button" hidden>Desconectar</button></div>
+    </article>
+    <article class="orb-card">
+      <div class="orb-card-head"><span>AGENDA //</span><span id="dash-calendar-state" class="orb-state">OFFLINE</span></div>
+      <div class="orb-card-caption" id="dash-calendar-note">Próximos sete dias.</div>
+      <div id="dash-calendar-list" class="orb-items"><div class="orb-empty">Conecte o Google para ver seus compromissos.</div></div>
+    </article>
   </div>
-  <div class="dash-grid">
-    <article class="dash-card"><div class="dash-card-head"><b>✉</b> E-mails prioritários</div><div class="dash-card-main" id="dash-email">Carregando…</div><div class="dash-card-note">Conecte uma conta para exibir mensagens importantes.</div></article>
-    <article class="dash-card"><div class="dash-card-head"><b>▣</b> Notificações móveis <span id="dash-notification-count"></span></div><div class="dash-card-main" id="dash-notifications-empty">Aguardando notificações do celular.</div><div class="dash-notifications" id="dash-notifications"></div></article>
-    <article class="dash-card"><div class="dash-card-head"><b>◷</b> Agenda e eventos</div><div class="dash-card-main" id="dash-events">Carregando…</div><div class="dash-card-note">Eventos aparecerão aqui quando a agenda estiver conectada.</div></article>
-    <article class="dash-card"><div class="dash-card-head"><b>☼</b> Clima</div><div class="dash-card-main" id="dash-weather">Carregando…</div><div class="dash-card-note">Nenhuma localização foi consultada automaticamente.</div></article>
-    <article class="dash-card"><div class="dash-card-head"><b>▤</b> Relatórios</div><div class="dash-card-main" id="dash-report">Carregando relatórios…</div><div class="dash-card-note">Relatórios concluídos ficam salvos localmente.</div></article>
-    <article class="dash-card" id="dash-activity-card" hidden><div class="dash-card-head"><b>⌘</b> Atividade do JARVIS</div><div id="dash-activity-list" class="dash-activity-list"></div></article>
-    <article class="dash-card" id="dash-response-card" hidden><div class="dash-card-head"><b>◉</b> Resposta em andamento</div><div id="dash-response-text" class="dash-response-text"></div><div class="dash-response-track"><span id="dash-response-progress"></span></div><div id="dash-response-status" class="dash-response-status">Aguardando fala</div></article>
+  <div class="orb-side orb-right">
+    <article class="orb-card">
+      <div class="orb-card-head"><span>CLIMA //</span><span id="dash-weather-state" class="orb-state">LOCAL</span></div>
+      <div class="orb-weather-form"><input id="dash-weather-city" type="text" maxlength="100" placeholder="Digite uma cidade" autocomplete="off"><button id="dash-weather-search" class="orb-action" type="button">BUSCAR</button></div>
+      <div class="orb-weather-current"><strong id="dash-weather-temp">--°</strong><span id="dash-weather-condition">Escolha uma cidade para consultar.</span></div>
+      <div class="orb-weather-meta" id="dash-weather-meta"></div>
+      <div class="orb-card-caption" id="dash-weather-days"></div>
+    </article>
+    <article class="orb-card">
+      <div class="orb-card-head"><span>SAMSUNG HEALTH //</span><span id="dash-sleep-state" class="orb-state">AGUARDANDO</span></div>
+      <div class="orb-sleep-main"><strong id="dash-sleep-duration">--h --m</strong><span>ÚLTIMA SESSÃO DE SONO</span></div>
+      <div class="orb-card-caption" id="dash-sleep-meta">Abra o Companion Android e sincronize os dados de sono.</div>
+      <div class="orb-sleep-stages" id="dash-sleep-stages"></div>
+      <div class="orb-sleep-steps"><span>PASSOS HOJE</span><b id="dash-sleep-steps">—</b></div>
+      <div class="orb-card-caption" id="dash-sleep-synced">Dados de saúde permanecem locais no computador.</div>
+    </article>
   </div>
+  <div id="dash-mobile-drawer" class="orb-mobile-drawer" hidden>
+    <div class="orb-card-head"><span>NOTIFICAÇÕES DO CELULAR</span><span id="dash-mobile-state" class="orb-state">OFFLINE</span></div>
+    <div id="dash-mobile-list"></div>
+  </div>
+  <div id="jarvis-toasts" aria-live="polite"></div>
 </section>
 <div id="jarvis-boot" role="dialog" aria-modal="true" aria-label="Verificação de identidade">
   <div class="boot-wrap">
@@ -806,6 +834,6 @@
   </div>
 </div>
 
-<script src="/dashboard.js?v=1"></script>
+<script src="/dashboard.js?v=3"></script>
 </body>
 </html>

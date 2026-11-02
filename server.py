@@ -31,6 +31,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from security.configuration import ler_env, atualizar_env
+from integrations.google_workspace import GoogleWorkspace
+import urllib.parse
 
 RAIZ = Path(__file__).resolve().parent
 WEB = RAIZ / "web"
@@ -70,10 +72,14 @@ def carregar_config():
         "mobile_secret": base.get("JARVIS_MOBILE_SECRET", ""),
         "face_enabled": base.get("JARVIS_FACE_ENABLED", "1"),
         "wake_music_path": base.get("JARVIS_WAKE_MUSIC_PATH", ""),
+        "google_client_id": base.get("GOOGLE_CLIENT_ID", ""),
+        "google_client_secret": base.get("GOOGLE_CLIENT_SECRET", ""),
     }
 
 
 CFG = carregar_config()
+GOOGLE = GoogleWorkspace(ESTADO, CFG.get("google_client_id", ""), CFG.get("google_client_secret", ""))
+PONTE_MOVEL = None
 def carregar_vozes():
     try:
         return json.loads((RAIZ / "vozes.json").read_text(encoding="utf-8"))
@@ -1150,6 +1156,76 @@ def notificacoes_painel():
     return itens[:12]
 
 
+def saude_painel():
+    caminho = ESTADO / "health_summary.json"
+    try:
+        item = json.loads(caminho.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {"status": "not_synced", "source": "Health Connect", "synced_at": 0, "steps_today": 0, "sleep_sessions": []}
+    return {
+        "status": "synced" if item.get("synced_at") else "not_synced",
+        "source": str(item.get("source", "Health Connect"))[:60],
+        "synced_at": int(item.get("synced_at", 0) or 0),
+        "steps_today": max(0, int(item.get("steps_today", 0) or 0)),
+        "sleep_sessions": item.get("sleep_sessions", [])[:10] if isinstance(item.get("sleep_sessions"), list) else [],
+    }
+
+
+def consultar_clima(cidade):
+    cidade = str(cidade or "").strip()[:100]
+    if not cidade:
+        raise ValueError("Informe uma cidade para consultar o clima.")
+    headers = {"User-Agent": "JARVIS/1.0 (local assistant)"}
+    geo_url = "https://geocoding-api.open-meteo.com/v1/search?" + urllib.parse.urlencode(
+        {"name": cidade, "count": 1, "language": "pt", "format": "json"}
+    )
+    request = urllib.request.Request(geo_url, headers=headers)
+    with urllib.request.urlopen(request, timeout=12) as response:
+        geo = json.loads(response.read().decode("utf-8"))
+    places = geo.get("results") or []
+    if not places:
+        raise ValueError("Cidade não encontrada. Confira a escrita e tente novamente.")
+    place = places[0]
+    forecast_url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode({
+        "latitude": place["latitude"], "longitude": place["longitude"],
+        "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m",
+        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        "timezone": "auto", "forecast_days": 3,
+    })
+    request = urllib.request.Request(forecast_url, headers=headers)
+    with urllib.request.urlopen(request, timeout=12) as response:
+        forecast = json.loads(response.read().decode("utf-8"))
+    current = forecast.get("current") or {}
+    daily = forecast.get("daily") or {}
+    code = int(current.get("weather_code", -1))
+    descriptions = {
+        0: "Céu limpo", 1: "Predominantemente limpo", 2: "Parcialmente nublado",
+        3: "Nublado", 45: "Neblina", 48: "Neblina com geada",
+        51: "Garoa leve", 53: "Garoa moderada", 55: "Garoa intensa",
+        61: "Chuva leve", 63: "Chuva moderada", 65: "Chuva forte",
+        71: "Neve leve", 73: "Neve moderada", 75: "Neve forte",
+        80: "Pancadas leves", 81: "Pancadas moderadas", 82: "Pancadas fortes",
+        95: "Trovoadas", 96: "Trovoadas com granizo", 99: "Trovoadas fortes",
+    }
+    return {
+        "city": str(place.get("name", cidade))[:100],
+        "region": str(place.get("admin1", ""))[:100],
+        "country": str(place.get("country", ""))[:100],
+        "temperature": current.get("temperature_2m"),
+        "feels_like": current.get("apparent_temperature"),
+        "humidity": current.get("relative_humidity_2m"),
+        "wind": current.get("wind_speed_10m"),
+        "condition": descriptions.get(code, "Condição indisponível"),
+        "daily": [
+            {"date": date, "max": maximum, "min": minimum, "rain": rain}
+            for date, maximum, minimum, rain in zip(
+                daily.get("time", []), daily.get("temperature_2m_max", []),
+                daily.get("temperature_2m_min", []), daily.get("precipitation_probability_max", [])
+            )
+        ],
+    }
+
+
 def config_atual():
     nome_voz = next((voz.get("nome") for voz in VOZES if voz.get("id") == CFG["voz"]), "Voz não encontrada")
     return {
@@ -1219,20 +1295,36 @@ class Servidor(BaseHTTPRequestHandler):
         if caminho == "/api/eventos":
             return self.eventos()
         if caminho == "/api/painel":
+            google = GOOGLE.dashboard()
+            mobile = PONTE_MOVEL.status() if PONTE_MOVEL else {
+                "connected": False, "status": "not_configured", "last_error": "Ponte móvel não iniciada."
+            }
+            health = saude_painel()
+            connected = google.get("status") == "connected"
             dados = {
                 "notifications": notificacoes_painel(),
                 "reports": relatorios_painel(),
+                "google": google,
+                "emails": google.get("emails", []),
+                "events": google.get("events", []),
+                "health": health,
                 "integrations": {
-                    "email": {"connected": False, "status": "not_connected"},
-                    "calendar": {"connected": False, "status": "not_connected"},
-                    "weather": {"connected": False, "status": "not_configured"},
-                    "mobile": {
-                        "connected": bool(CFG["ntfy_inbox"] and CFG["ntfy_alerts"] and CFG["mobile_secret"]),
-                        "status": "connected" if (CFG["ntfy_inbox"] and CFG["ntfy_alerts"] and CFG["mobile_secret"]) else "not_configured",
-                    },
+                    "email": {"connected": connected, "status": google.get("status", "not_connected")},
+                    "calendar": {"connected": connected, "status": google.get("status", "not_connected")},
+                    "weather": {"connected": False, "status": "user_selected_location"},
+                    "health": {"connected": health.get("status") == "synced", "status": health.get("status", "not_synced")},
+                    "mobile": mobile,
                 },
             }
             return self.responder(200, json.dumps(dados, ensure_ascii=False).encode())
+        if caminho == "/api/clima":
+            params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            cidade = (params.get("cidade") or [""])[0]
+            try:
+                clima = consultar_clima(cidade)
+                return self.responder(200, json.dumps({"ok": True, "weather": clima}, ensure_ascii=False).encode())
+            except (ValueError, urllib.error.URLError, TimeoutError, OSError) as exc:
+                return self.responder(502, json.dumps({"ok": False, "message": str(exc)[:180]}, ensure_ascii=False).encode())
         if caminho == "/api/config":
             return self.responder(200, json.dumps(config_atual(), ensure_ascii=False).encode())
         if caminho.startswith("/api/amostra/"):
@@ -1254,6 +1346,13 @@ class Servidor(BaseHTTPRequestHandler):
     def do_POST(self):
         tamanho = int(self.headers.get("Content-Length", "0"))
         corpo = self.rfile.read(tamanho) if tamanho else b""
+        if self.path == "/api/google/connect":
+            resultado = GOOGLE.start_authorization()
+            codigo = 200 if resultado.get("authorization_url") else 503
+            return self.responder(codigo, json.dumps(resultado, ensure_ascii=False).encode())
+        if self.path == "/api/google/disconnect":
+            resultado = GOOGLE.disconnect()
+            return self.responder(200, json.dumps(resultado, ensure_ascii=False).encode())
         if self.path == "/api/interromper":
             return self.responder(200, json.dumps({"interrompeu": interromper()}).encode())
         if self.path in ("/api/audio", "/api/texto") and Turno.ocupado.locked() and not Turno.interrompido and not SESSAO.tem_aprovacao():
@@ -1409,6 +1508,7 @@ def tocar_musica_ao_iniciar():
 
 
 def main():
+    global PONTE_MOVEL
     completar_path()
     if not CFG["pasta"].is_dir():
         sys.exit(f"JARVIS_PASTA não existe: {CFG['pasta']}")
@@ -1423,7 +1523,8 @@ def main():
 
     try:
         from security.agent import iniciar as iniciar_seguranca
-        ponte_seguranca = iniciar_seguranca(EVENTOS, ESTADO, CFG)
+        PONTE_MOVEL = iniciar_seguranca(EVENTOS, ESTADO, CFG)
+        ponte_seguranca = PONTE_MOVEL
     except Exception as erro:
         ponte_seguranca = None
         print("JARVIS: módulo de segurança não iniciou:", repr(erro))

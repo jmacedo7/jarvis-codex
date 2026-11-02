@@ -3,7 +3,7 @@ from pathlib import Path
 from .bridge import MobileBridge
 def iniciar(eventos,estado_dir,cfg):
     bridge=MobileBridge(cfg,estado_dir,eventos)
-    if bridge.start(): print("JARVIS: ponte móvel criptografada conectada.")
+    if bridge.start(): print("JARVIS: ponte móvel iniciada; verificando conexão ntfy.")
     else: print("JARVIS: ponte móvel não configurada; execute python -m security.setup.")
     if str(cfg.get("face_enabled","1")).lower() not in ("1","true","yes","on"):
         if eventos: eventos.emitir({"tipo":"face_status","status":"disabled","name":None,"similarity":None})
