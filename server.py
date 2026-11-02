@@ -30,6 +30,8 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from security.configuration import ler_env, atualizar_env
+
 RAIZ = Path(__file__).resolve().parent
 WEB = RAIZ / "web"
 ESTADO = RAIZ / ".estado"
@@ -37,25 +39,10 @@ ESTADO = RAIZ / ".estado"
 
 # ---------------------------------------------------------------- configuração
 
-def ler_env(caminho):
-    valores = {}
-    try:
-        for linha in Path(caminho).expanduser().read_text(encoding="utf-8").splitlines():
-            linha = linha.strip()
-            if not linha or linha.startswith("#") or "=" not in linha:
-                continue
-            k, v = linha.split("=", 1)
-            valores[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return valores
-
-
 def carregar_config():
-    # Ordem: variável de ambiente > .env do projeto > ~/.config/vortex-marketing/.env
-    base = ler_env("~/.config/vortex-marketing/.env")
-    base.update(ler_env(RAIZ / ".env"))
-    base.update({k: v for k, v in os.environ.items() if k.startswith(("JARVIS_", "ELEVENLABS_", "WHISPER_"))})
+    # Fonte única: somente o .env localizado ao lado deste server.py.
+    # .env.example é apenas documentação; configurações globais/Windows não sobrescrevem esta instalação.
+    base = ler_env(RAIZ / ".env")
     pasta = Path(base.get("JARVIS_PASTA") or Path.home()).expanduser()
     return {
         "pasta": pasta,
@@ -87,9 +74,6 @@ def carregar_config():
 
 
 CFG = carregar_config()
-PREFS = ESTADO / "preferencias.json"  # o que se escolhe na engrenagem vale mais que o .env
-
-
 def carregar_vozes():
     try:
         return json.loads((RAIZ / "vozes.json").read_text(encoding="utf-8"))
@@ -97,24 +81,17 @@ def carregar_vozes():
         return []
 
 
-def carregar_preferencias():
-    try:
-        p = json.loads(PREFS.read_text(encoding="utf-8"))
-    except (FileNotFoundError, ValueError):
-        return
-    if p.get("voz"):
-        CFG["voz"] = p["voz"]
-    if p.get("velocidade"):
-        CFG["velocidade_voz"] = float(p["velocidade"])
-
-
 def salvar_preferencias():
-    ESTADO.mkdir(exist_ok=True)
-    PREFS.write_text(json.dumps({"voz": CFG["voz"], "velocidade": CFG["velocidade_voz"]}), encoding="utf-8")
+    """Persiste a escolha da engrenagem no único arquivo de configuração da instalação."""
+    atualizar_env(RAIZ / ".env", {
+        "JARVIS_VOZ": CFG["voz"],
+        "JARVIS_VELOCIDADE_VOZ": f'{CFG["velocidade_voz"]:.2f}',
+    })
 
 
 VOZES = carregar_vozes()
-carregar_preferencias()
+if VOZES and CFG["voz"] not in {voz.get("id") for voz in VOZES}:
+    CFG["voz"] = next((voz["id"] for voz in VOZES if voz.get("id") == "xHUwLsLfyqiYOIVTzLRW"), VOZES[0]["id"])
 AMOSTRA = "Às suas ordens, Senhor. É assim que eu vou falar com o senhor daqui pra frente."
 
 
@@ -1056,6 +1033,8 @@ def processar(audio=None, mime="audio/webm", texto=None):
                 resposta = limpar_para_fala(resumo.group(1))[:900]
         if r.get("is_error"):
             registro["erro"] = r.get("result")
+        elif eh_comando_fim_dia(texto):
+            registro["relatorio_salvo"] = salvar_relatorio(resultado_bruto)
         Turno.aguardando_confirmacao = pediu_confirmacao(resposta)
 
         audio_url = f"/api/voz/{Fala.criar(resposta)}" if CFG["eleven_key"] else ""
@@ -1083,34 +1062,71 @@ def processar(audio=None, mime="audio/webm", texto=None):
 
 
 def diagnostico_config():
-    """Mostra de onde vêm as configurações sem revelar nenhum segredo."""
-    global_env = Path("~/.config/vortex-marketing/.env").expanduser()
+    """Diagnóstico seguro: mostra origem e estado, nunca revela chaves."""
     project_env = RAIZ / ".env"
-    keys = ("ELEVENLABS_API_KEY", "JARVIS_PORTA", "JARVIS_FACE_ENABLED",
-            "JARVIS_NTFY_INBOX", "JARVIS_NTFY_ALERTS", "JARVIS_MOBILE_SECRET")
-    fontes = {}
-    env_os = os.environ
-    global_values = ler_env(global_env)
     project_values = ler_env(project_env)
-    for key in keys:
-        if key in env_os:
-            fontes[key] = "variável de ambiente do Windows"
-        elif key in project_values:
-            fontes[key] = "arquivo .env do projeto"
-        elif key in global_values:
-            fontes[key] = "arquivo global ~/.config/vortex-marketing/.env"
-        else:
-            fontes[key] = "padrão / não configurado"
+    keys = ("ELEVENLABS_API_KEY", "JARVIS_VOZ", "JARVIS_VELOCIDADE_VOZ",
+            "JARVIS_PORTA", "JARVIS_FACE_ENABLED", "JARVIS_NTFY_INBOX",
+            "JARVIS_NTFY_ALERTS", "JARVIS_MOBILE_SECRET")
+    fontes = {
+        key: ("arquivo .env desta instalação" if key in project_values else "padrão / não configurado")
+        for key in keys
+    }
+    nome_voz = next((voz.get("nome") for voz in VOZES if voz.get("id") == CFG["voz"]), "Voz não encontrada")
     return {
         "arquivo_ativo": str(project_env),
         "arquivo_ativo_existe": project_env.is_file(),
         "modelo_exemplo": str(RAIZ / ".env.example"),
         "modelo_exemplo_e_carregado": False,
-        "arquivo_global": str(global_env),
-        "arquivo_global_existe": global_env.is_file(),
+        "outras_fontes_de_configuracao_consultadas": False,
+        "elevenlabs_configurado": bool(CFG["eleven_key"]),
+        "voz_id": CFG["voz"],
+        "voz_nome": nome_voz,
+        "modelo_voz": CFG["modelo_voz"],
+        "velocidade_voz": CFG["velocidade_voz"],
+        "modo_de_fala": "ElevenLabs" if CFG["eleven_key"] else "voz local do navegador",
         "fontes": fontes,
         "ambiente_python": sys.executable,
     }
+
+
+def salvar_relatorio(conteudo):
+    """Guarda o relatório integral localmente para consulta no painel."""
+    pasta = ESTADO / "relatorios"
+    pasta.mkdir(parents=True, exist_ok=True)
+    criado = time.strftime("%Y-%m-%d %H:%M:%S")
+    nome = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6] + ".json"
+    resumo = re.search(r"(?:resumo falado|para ouvir|vers[aã]o falada)\s*:?\s*(.*)$", conteudo, re.I | re.S)
+    registro = {
+        "title": "Relatório de encerramento do dia",
+        "created_at": criado,
+        "content": str(conteudo)[:50000],
+        "summary": str(resumo.group(1)).strip()[:1200] if resumo else "",
+    }
+    destino = pasta / nome
+    temporario = destino.with_suffix(".tmp")
+    temporario.write_text(json.dumps(registro, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporario.replace(destino)
+    return nome
+
+
+def relatorios_painel():
+    pasta = ESTADO / "relatorios"
+    if not pasta.is_dir():
+        return []
+    itens = []
+    for caminho in sorted(pasta.glob("*.json"), reverse=True)[:5]:
+        try:
+            item = json.loads(caminho.read_text(encoding="utf-8"))
+            itens.append({
+                "title": str(item.get("title", "Relatório"))[:120],
+                "created_at": str(item.get("created_at", ""))[:40],
+                "summary": str(item.get("summary", ""))[:1200],
+                "content": str(item.get("content", ""))[:12000],
+            })
+        except (OSError, ValueError, TypeError):
+            continue
+    return itens
 
 
 def notificacoes_painel():
@@ -1135,7 +1151,16 @@ def notificacoes_painel():
 
 
 def config_atual():
-    return {"voz": CFG["voz"], "velocidade": CFG["velocidade_voz"], "vozes": VOZES}
+    nome_voz = next((voz.get("nome") for voz in VOZES if voz.get("id") == CFG["voz"]), "Voz não encontrada")
+    return {
+        "voz": CFG["voz"],
+        "nome_voz": nome_voz,
+        "velocidade": CFG["velocidade_voz"],
+        "modelo_voz": CFG["modelo_voz"],
+        "elevenlabs_configurado": bool(CFG["eleven_key"]),
+        "provedor": "ElevenLabs" if CFG["eleven_key"] else "voz local do navegador",
+        "vozes": VOZES,
+    }
 
 
 def gravar_avisos_prontos():
@@ -1194,8 +1219,19 @@ class Servidor(BaseHTTPRequestHandler):
         if caminho == "/api/eventos":
             return self.eventos()
         if caminho == "/api/painel":
-            dados = {"notifications": notificacoes_painel(),
-                     "email_connected": False, "calendar_connected": False, "weather_configured": False}
+            dados = {
+                "notifications": notificacoes_painel(),
+                "reports": relatorios_painel(),
+                "integrations": {
+                    "email": {"connected": False, "status": "not_connected"},
+                    "calendar": {"connected": False, "status": "not_connected"},
+                    "weather": {"connected": False, "status": "not_configured"},
+                    "mobile": {
+                        "connected": bool(CFG["ntfy_inbox"] and CFG["ntfy_alerts"] and CFG["mobile_secret"]),
+                        "status": "connected" if (CFG["ntfy_inbox"] and CFG["ntfy_alerts"] and CFG["mobile_secret"]) else "not_configured",
+                    },
+                },
+            }
             return self.responder(200, json.dumps(dados, ensure_ascii=False).encode())
         if caminho == "/api/config":
             return self.responder(200, json.dumps(config_atual(), ensure_ascii=False).encode())
@@ -1205,7 +1241,8 @@ class Servidor(BaseHTTPRequestHandler):
             return self.voz(caminho.rsplit("/", 1)[-1])
         if caminho == "/api/saude":
             corpo = json.dumps({"codex": SESSAO.vivo(), "pasta": str(CFG["pasta"]), "modelo": CFG["modelo"],
-                                "telas": len(EVENTOS.ouvintes), "configuracao": diagnostico_config()})
+                                "telas": len(EVENTOS.ouvintes), "voz": config_atual(),
+                                "configuracao": diagnostico_config()}, ensure_ascii=False)
             return self.responder(200, corpo.encode())
         arquivo = (WEB / ("index.html" if caminho == "/" else caminho.lstrip("/"))).resolve()
         if WEB.resolve() not in arquivo.parents and arquivo != WEB.resolve() / "index.html":
@@ -1378,7 +1415,7 @@ def main():
     if not (shutil.which(CFG["codex_bin"]) or shutil.which(CFG["codex_bin"] + ".cmd")):
         sys.exit("Não achei o Codex CLI (comando codex). Instale e faça login: https://developers.openai.com/codex/cli")
     if not CFG["eleven_key"]:
-        print("Aviso: sem ELEVENLABS_API_KEY. Ele vai responder só em texto na tela.")
+        print("Aviso: sem ELEVENLABS_API_KEY no .env desta instalação. A fala usará a voz local do navegador.")
     servidor = ThreadingHTTPServer(("127.0.0.1", CFG["porta"]), Servidor)
     servidor.daemon_threads = True
     url = f"http://localhost:{CFG['porta']}"

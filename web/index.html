@@ -352,18 +352,35 @@
     return decodificar(await resposta.arrayBuffer());
   }
 
+  function eventoPainel(nome, detalhe) {
+    window.dispatchEvent(new CustomEvent(nome, { detail: detalhe || {} }));
+  }
+
   function falarLocal(texto, terminou) {
     if (!texto || !("speechSynthesis" in window)) return false;
     const fala = new SpeechSynthesisUtterance(texto);
     fala.lang = "pt-BR";
     fala.rate = 1;
     const vozesLocais = window.speechSynthesis.getVoices();
-    const vozPt = vozesLocais.find((v) => /^pt(-|_)?br/i.test(v.lang)) ||
+    const vozPt = vozesLocais.find((v) => /^pt(-|_)?br$/i.test(v.lang)) ||
+                  vozesLocais.find((v) => /^pt(-|_)?br/i.test(v.lang)) ||
                   vozesLocais.find((v) => /^pt/i.test(v.lang));
     if (vozPt) fala.voice = vozPt;
-    fala.onstart = () => mudarEstado("falando");
-    fala.onend = () => { diag("voz_local_tocou", texto.slice(0, 80)); terminou(); };
-    fala.onerror = (ev) => { diag("voz_local_falhou", ev.error || "erro"); terminou(); };
+    fala.onstart = () => {
+      mudarEstado("falando");
+      const palavras = texto.trim().split(/\s+/).filter(Boolean).length;
+      eventoPainel("jarvis:speech-start", { text: texto, duration: Math.max(1.2, palavras / 2.5), source: "navegador" });
+    };
+    fala.onend = () => {
+      eventoPainel("jarvis:speech-end", { source: "navegador" });
+      diag("voz_local_tocou", texto.slice(0, 80));
+      terminou();
+    };
+    fala.onerror = (ev) => {
+      eventoPainel("jarvis:speech-end", { source: "navegador", failed: true });
+      diag("voz_local_falhou", ev.error || "erro");
+      terminou();
+    };
     window.speechSynthesis.speak(fala);
     return true;
   }
@@ -373,7 +390,7 @@
       if (!tocando) mudarEstado(turnoAberto ? "pensando" : "parado");
       return;
     }
-    fila.push({ promise: url ? baixar(url) : Promise.resolve(null), texto });
+    fila.push({ promise: url ? baixar(url) : Promise.resolve(null), texto, remote: Boolean(url) });
     if (!tocando) proxima();
   }
 
@@ -390,8 +407,9 @@
       const buffer = await item.promise;
       if (!tocando) return;
       if (!buffer) {
+        if (item.remote) throw new Error("O servidor não entregou o áudio premium.");
         if (falarLocal(item.texto, () => { tocando = false; proxima(); })) return;
-        throw new Error("voz remota indisponível e navegador sem voz local");
+        throw new Error("Não há voz local em português disponível neste navegador.");
       }
       if (audioCtx.state !== "running") {
         throw new Error("som bloqueado pelo navegador (estado " + audioCtx.state + ")");
@@ -400,6 +418,7 @@
       fonte.buffer = buffer;
       fonte.connect(analisadorSaida);
       fonte.onended = () => {
+        eventoPainel("jarvis:speech-end", { source: "ElevenLabs" });
         if (falaAtual === fonte) {
           falaAtual = null;
           tocando = false;
@@ -409,11 +428,14 @@
       falaAtual = fonte;
       mudarEstado("falando");
       fonte.start();
+      eventoPainel("jarvis:speech-start", { text: item.texto, duration: buffer.duration, source: "ElevenLabs" });
       diag("voz_tocou", buffer.duration.toFixed(1) + " s");
     } catch (erro) {
       diag("voz_falhou", erro && erro.message ? erro.message : erro);
-      if (falarLocal(item.texto, () => { tocando = false; proxima(); })) return;
-      avisar("A voz online falhou e não há voz local disponível neste navegador.");
+      if (!item.remote && falarLocal(item.texto, () => { tocando = false; proxima(); })) return;
+      avisar(item.remote
+        ? "A voz ElevenLabs falhou. Mantive a voz selecionada e não troquei silenciosamente para outra voz."
+        : "Não há voz local em português disponível neste navegador.");
       tocando = false;
       proxima();
     }
@@ -594,6 +616,7 @@
         el("voce").textContent = "“" + e.texto + "”";
       } else if (e.tipo === "ferramenta") {
         chip(e.rotulo);
+        eventoPainel("jarvis:tool", { label: e.rotulo });
       } else if (e.tipo === "fala") {
         falar(e.audio, e.texto);  // voz remota ou síntese local como alternativa
       } else if (e.tipo === "resposta") {
@@ -745,6 +768,9 @@
     <article class="dash-card"><div class="dash-card-head"><b>▣</b> Notificações móveis <span id="dash-notification-count"></span></div><div class="dash-card-main" id="dash-notifications-empty">Aguardando notificações do celular.</div><div class="dash-notifications" id="dash-notifications"></div></article>
     <article class="dash-card"><div class="dash-card-head"><b>◷</b> Agenda e eventos</div><div class="dash-card-main" id="dash-events">Carregando…</div><div class="dash-card-note">Eventos aparecerão aqui quando a agenda estiver conectada.</div></article>
     <article class="dash-card"><div class="dash-card-head"><b>☼</b> Clima</div><div class="dash-card-main" id="dash-weather">Carregando…</div><div class="dash-card-note">Nenhuma localização foi consultada automaticamente.</div></article>
+    <article class="dash-card"><div class="dash-card-head"><b>▤</b> Relatórios</div><div class="dash-card-main" id="dash-report">Carregando relatórios…</div><div class="dash-card-note">Relatórios concluídos ficam salvos localmente.</div></article>
+    <article class="dash-card" id="dash-activity-card" hidden><div class="dash-card-head"><b>⌘</b> Atividade do JARVIS</div><div id="dash-activity-list" class="dash-activity-list"></div></article>
+    <article class="dash-card" id="dash-response-card" hidden><div class="dash-card-head"><b>◉</b> Resposta em andamento</div><div id="dash-response-text" class="dash-response-text"></div><div class="dash-response-track"><span id="dash-response-progress"></span></div><div id="dash-response-status" class="dash-response-status">Aguardando fala</div></article>
   </div>
 </section>
 <div id="jarvis-boot" role="dialog" aria-modal="true" aria-label="Verificação de identidade">
@@ -762,6 +788,19 @@
   </div>
 </div>
 <div id="jarvis-toasts" aria-live="polite"></div>
+<div id="jarvis-guide" class="jarvis-guide" role="dialog" aria-modal="true"
+     aria-labelledby="guide-title" aria-describedby="guide-body" hidden>
+  <div class="guide-card">
+    <div class="guide-kicker">PRIMEIRA INICIALIZAÇÃO · JARVIS</div>
+    <div id="guide-step" class="guide-step">PASSO 1 DE 3</div>
+    <h2 id="guide-title">Vamos configurar seu uso</h2>
+    <p id="guide-body">Segure a barra de espaço para falar com o JARVIS.</p>
+    <div class="guide-actions">
+      <button id="guide-dismiss" type="button">Agora não</button>
+      <button id="guide-advance" type="button">Continuar</button>
+    </div>
+  </div>
+</div>
 
 <script src="/dashboard.js?v=1"></script>
 </body>

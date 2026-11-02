@@ -22,6 +22,8 @@ jobs:
           node-version: "20"
       - name: Compile all JARVIS Python modules
         run: python -m compileall -q server.py security atalhos hooks app
+      - name: Run JARVIS unit tests
+        run: python -m unittest discover -s tests -v
       - name: Extract browser script
         run: |
           python - <<'PY'

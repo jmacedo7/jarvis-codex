@@ -55,3 +55,24 @@ body.jarvis-authenticated #jarvis-dashboard{opacity:1;transform:none}
 
 body.jarvis-authenticated #face-panel{top:auto;bottom:24px;left:24px;opacity:.82;transform:scale(.88);transform-origin:bottom left}
 @media(max-width:600px){body.jarvis-authenticated #face-panel{bottom:12px;left:12px;top:auto;width:190px}}
+
+#dash-response-card{grid-column:1/-1;min-height:90px}
+#dash-response-card[hidden],#dash-activity-card[hidden]{display:none!important}
+.dash-response-text{font-size:13px;line-height:1.7;color:#e9fbff;white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow:auto}
+.dash-response-track{height:2px;margin-top:13px;border-radius:3px;background:rgba(140,236,255,.12);overflow:hidden}
+.dash-response-track span{display:block;width:0;height:100%;background:var(--cyan);box-shadow:0 0 10px var(--cyan);transition:width .08s linear}
+.dash-response-status{font-size:9px;color:var(--muted);margin-top:8px;letter-spacing:.13em;text-transform:uppercase}
+.dash-activity-list{display:flex;gap:6px;flex-wrap:wrap}
+.dash-activity-chip{font-size:10px;color:#c5e9f3;border:1px solid rgba(140,236,255,.18);border-radius:999px;padding:5px 8px;background:rgba(140,236,255,.04)}
+#dash-report{white-space:pre-wrap;max-height:130px;overflow:auto}
+.jarvis-guide{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:18px;background:rgba(0,5,9,.78);backdrop-filter:blur(12px)}
+.jarvis-guide[hidden]{display:none!important}
+.guide-card{width:min(440px,100%);padding:25px;border:1px solid rgba(140,236,255,.28);border-radius:18px;background:linear-gradient(145deg,rgba(10,31,43,.98),rgba(3,10,16,.98));box-shadow:0 25px 80px rgba(0,0,0,.55);color:#eafaff}
+.guide-kicker{font-size:9px;letter-spacing:.22em;color:var(--cyan);text-transform:uppercase}
+.guide-step{margin-top:24px;color:#7f9aa7;font-size:10px;letter-spacing:.16em}
+.guide-card h2{font-size:23px;font-weight:500;margin:9px 0}
+.guide-card p{font-size:13px;line-height:1.75;color:#a8c2ce;min-height:70px}
+.guide-actions{display:flex;justify-content:space-between;gap:12px;margin-top:22px}
+.guide-actions button{border:1px solid rgba(140,236,255,.24);border-radius:10px;padding:10px 15px;background:rgba(140,236,255,.06);color:#eafaff;font:inherit;font-size:12px;cursor:pointer}
+.guide-actions button:last-child{background:rgba(57,189,228,.18);border-color:rgba(140,236,255,.5)}
+@media(max-width:560px){#dash-response-card{grid-column:1/-1}.guide-card{padding:20px}}
